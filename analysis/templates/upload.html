@@ -12,20 +12,21 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
   <style>
     :root {
-      --bg:      #1e1e2e;
-      --surface: #24273a;
-      --overlay: #181825;
-      --muted:   #313244;
-      --subtle:  #45475a;
-      --text:    #cdd6f4;
-      --text2:   #a6adc8;
-      --text3:   #7f849c;
-      --purple:  #cba6f7;
-      --blue:    #89b4fa;
-      --green:   #a6e3a1;
-      --peach:   #fab387;
-      --red:     #f38ba8;
-      --yellow:  #f9e2af;
+      --bg:      #111827;
+      --surface: #1f2937;
+      --overlay: #0d1117;
+      --muted:   #374151;
+      --subtle:  #4b5563;
+      --text:    #f3f4f6;
+      --text2:   #9ca3af;
+      --text3:   #6b7280;
+      --purple:  #60a5fa;
+      --blue:    #93c5fd;
+      --green:   #2dd4bf;
+      --peach:   #fb923c;
+      --red:     #f472b6;
+      --yellow:  #fbbf24;
+      --mauve:   #a78bfa;
     }
     *, *::before, *::after { box-sizing: border-box; }
     body { padding-top:64px; background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; line-height:1.5; }
@@ -37,7 +38,7 @@
       font-size: 1.75rem;
       font-weight: 700;
       letter-spacing: 2px;
-      background: linear-gradient(90deg, #cba6f7, #89b4fa, #a6e3a1);
+      background: linear-gradient(90deg, #60a5fa, #2dd4bf, #fbbf24);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -155,7 +156,7 @@
 
 <nav class="navbar navbar-expand-lg fixed-top">
   <div class="container-fluid px-3 justify-content-center">
-    <span class="navbar-brand"><i class="bi bi-diagram-3-fill me-2"></i>XylemVision</span>
+    <span class="navbar-brand">XylemVision</span>
   </div>
 </nav>
 
@@ -453,7 +454,7 @@ function buildCardHTML(data, idx){
       <h5 title="${escHtml(data.file)}">${escHtml(data.file)}</h5>
       <div style="margin-left:auto;display:flex;align-items:center;gap:.4rem;">
         <span style="font-size:.72rem;color:var(--text3);">
-          <span style="color:var(--red);">■</span> ${data.n_xylem||0}x
+          <span style="color:var(--blue);">■</span> ${data.n_xylem||0}x
           <span style="color:var(--green);margin-left:.3rem;">■</span> ${data.n_vb||0}VB
           <span style="color:var(--peach);margin-left:.3rem;">■</span> ${data.n_root||0}R
         </span>
