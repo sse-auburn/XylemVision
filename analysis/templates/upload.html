@@ -533,7 +533,7 @@ function buildXylemTable(mx, keys){
   keys.forEach(k => { h += `<th>${escHtml(k.charAt(0).toUpperCase()+k.slice(1))}</th>`; });
   h += `<th>Color</th></tr></thead><tbody>`;
   mx.forEach((row, i) => {
-    h += `<tr class="xylem-row" data-xylem-idx="${i}">`;
+    h += `<tr class="xylem-row" data-xylem-idx="${row.id !== undefined ? row.id : i+1}">`;
     keys.forEach(k => {
       let cell = '';
       if (row[k] !== undefined){
@@ -696,7 +696,7 @@ function initCard(data, IDX){
       (CONTOURS[cls]||[]).forEach(function(pts, inst){
         if (pts && pts.length >= 3){
           const color = (cls==='Xylem' && mergedXylem[inst]) ? mergedXylem[inst].rgb : undefined;
-          addAnnotation(pts, cls, cls==='Xylem' ? inst : undefined, color);
+          addAnnotation(pts, cls, cls==='Xylem' ? inst + 1 : undefined, color);
         }
       });
     });
@@ -1105,7 +1105,7 @@ function initCard(data, IDX){
         (d.contours[cls]||[]).forEach(function(pts, inst){
           if (pts&&pts.length>=3){
             const color = (cls==='Xylem' && mx2[inst]) ? mx2[inst].rgb : undefined;
-            addAnnotation(pts, cls, cls==='Xylem'?inst:undefined, color);
+            addAnnotation(pts, cls, cls==='Xylem'?inst+1:undefined, color);
           }
         });
       });
