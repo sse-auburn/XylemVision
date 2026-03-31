@@ -88,34 +88,6 @@ sudo systemctl restart docker
 
 ---
 
-## Day-to-day Commands
-
-```bash
-# Start the app (after it was stopped)
-docker start xylemvision-app
-
-# Stop the app
-docker stop xylemvision-app
-
-# View live logs
-docker logs -f xylemvision-app
-
-# Open a shell inside the container
-docker exec -it xylemvision-app bash
-
-# Full clean rebuild — GPU
-bash build.sh
-
-# Full clean rebuild — CPU
-bash build.sh --cpu
-
-# Run in background — GPU
-bash build.sh -d
-
-# Run in background — CPU
-bash build.sh --cpu -d
-```
-
 ---
 
 ## Hot-Updating Files (No Rebuild Needed)
