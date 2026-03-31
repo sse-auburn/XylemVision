@@ -1048,7 +1048,7 @@ function initCard(data, IDX){
       spin.classList.remove('active');
       if (d.contour&&d.contour.length>=3){
         // Assign xylIdx for new Xylem annotations
-        const xylIdx = params.cls==='Xylem' ? annotations.filter(a=>a.cls==='Xylem').length : undefined;
+        const xylIdx = params.cls==='Xylem' ? annotations.filter(a=>a.cls==='Xylem').length + 1 : undefined;
         addAnnotation(d.contour, params.cls, xylIdx);
         fc.requestRenderAll();
         stat.textContent='Annotation added. Apply when ready.';

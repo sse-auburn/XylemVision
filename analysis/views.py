@@ -485,7 +485,7 @@ def generate_xlsx_for_result(result):
     ws_xy = wb.create_sheet(title="Xylem Details")
     ws_xy.append(["Image", "Xylem ID", "Xylem Area", "Xylem Diameter"])
     for d in result['metrics'].get('xylem_details', []):
-        ws_xy.append([result['file'], f"x_{d['id'] + 1}", d['area'], d['diameter']])
+        ws_xy.append([result['file'], f"x_{d['id']}", d['area'], d['diameter']])
 
     return wb
 

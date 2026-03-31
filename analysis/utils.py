@@ -94,7 +94,7 @@ def compute_props(masks, return_contours=False):
     If return_contours=True, also includes 'contour': [[x,y], ...].
     """
     props = []
-    for idx, m in enumerate(masks):
+    for idx, m in enumerate(masks, start=1):
         cnts, _ = cv2.findContours(
             m.astype(np.uint8),
             cv2.RETR_EXTERNAL,
