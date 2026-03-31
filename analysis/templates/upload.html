@@ -334,8 +334,10 @@ function dlTrainingBatch(){
     document.body.appendChild(a); a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    btn.innerHTML = '<i class="bi bi-archive me-1"></i>Download Training Images <span id="training-count-badge"></span>';
     updateTrainingBtn();
   }).catch(function(){
+    btn.innerHTML = '<i class="bi bi-archive me-1"></i>Download Training Images <span id="training-count-badge"></span>';
     updateTrainingBtn();
     alert('Export failed. Please try again.');
   });
@@ -755,6 +757,17 @@ function initCard(data, IDX){
   // ── Sidebar ───────────────────────────────────────────────────────────────
   function renderSidebar(){
     const active = fc.getActiveObject();
+
+    // Sync xylem table highlight with canvas selection
+    const xylSec = document.getElementById('xylem-section-'+IDX);
+    if (xylSec) {
+      xylSec.querySelectorAll('tr.xylem-row').forEach(r => r.classList.remove('xylem-row-active'));
+      if (active && active.data && active.data.cls === 'Xylem' && active.data.xylIdx !== null && active.data.xylIdx !== undefined) {
+        const matchRow = xylSec.querySelector('tr.xylem-row[data-xylem-idx="' + active.data.xylIdx + '"]');
+        if (matchRow) { matchRow.classList.add('xylem-row-active'); matchRow.scrollIntoView({block:'nearest'}); }
+      }
+    }
+
     const el = document.getElementById('ann-list-'+IDX);
     if (!annotations.length){
       el.innerHTML = '<div style="padding:.7rem;color:var(--subtle);font-size:.75rem;text-align:center;">No annotations</div>';
