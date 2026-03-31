@@ -45,7 +45,7 @@ bash build.sh
 bash build.sh --cpu
 ```
 
-**First build takes 15–30 minutes** — it pulls the base image, installs all dependencies, and downloads the model weights (~2.5 GB SAM + ~60 MB YOLO).
+**First build takes 15–30 minutes** it pulls the base image, installs all dependencies, and downloads the model weights (~2.5 GB SAM + ~60 MB YOLO).
 
 Open the app at: **http://localhost:8000**
 
