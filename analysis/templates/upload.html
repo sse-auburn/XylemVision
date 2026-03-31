@@ -1,347 +1,1137 @@
+{% load json_filters %}
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Root Structural Analysis</title>
-
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="csrf-token" content="{{ csrf_token }}"/>
+  <title>XylemVision</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
   <style>
-    body {
-      padding-top: 70px;
-      background: #f8f9fa;
+    :root {
+      --bg:      #1e1e2e;
+      --surface: #24273a;
+      --overlay: #181825;
+      --muted:   #313244;
+      --subtle:  #45475a;
+      --text:    #cdd6f4;
+      --text2:   #a6adc8;
+      --text3:   #7f849c;
+      --purple:  #cba6f7;
+      --blue:    #89b4fa;
+      --green:   #a6e3a1;
+      --peach:   #fab387;
+      --red:     #f38ba8;
+      --yellow:  #f9e2af;
     }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { padding-top:64px; background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; line-height:1.5; }
 
-    .color-box {
-      width: 40px;
-      height: 20px;
-      border-radius: 4px;
-    }
+    /* ── Navbar ── */
+    .navbar { background:var(--overlay) !important; border-bottom:1px solid var(--muted); }
+    .navbar-brand { color:var(--purple) !important; font-weight:700; font-size:1.05rem; letter-spacing:.3px; }
+    .navbar-brand i { color:var(--blue); }
 
-    .image-pair img {
-      max-width: 100%;
-      height: auto;
-      border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-    }
+    /* ── Upload card ── */
+    .upload-card { background:var(--surface); border:1px solid var(--muted); border-radius:12px; padding:1.25rem 1.5rem; margin-bottom:1.5rem; }
+    #dropZone { border:2px dashed var(--subtle); border-radius:8px; padding:1.75rem 2rem; text-align:center; cursor:pointer; color:var(--text2); transition:.2s; }
+    #dropZone:hover, #dropZone.drag-over { border-color:var(--purple); color:var(--purple); background:rgba(203,166,247,.05); }
 
-    .info-box {
-      background: white;
-      border: 1px solid #ddd;
-      border-left: 4px solid #0d6efd;
-      padding: 1rem 1.5rem;
-      margin-bottom: 1rem;
-      border-radius: 6px;
-    }
+    /* ── Result card ── */
+    .result-card { background:var(--surface); border:1px solid var(--muted); border-radius:12px; margin-bottom:2rem; overflow:hidden; }
+    .result-header { background:var(--overlay); padding:.65rem 1.25rem; border-bottom:1px solid var(--muted); display:flex; align-items:center; gap:.6rem; }
+    .result-header h5 { margin:0; color:var(--purple); font-size:.9rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%; }
 
-    .label-bg {
-      background-color: #343a40;
-      /* dark gray */
-      color: white;
-      padding: 0.3rem 0.8rem;
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
-      display: inline-block;
-      min-width: 180px;
-      /* adjust width as needed */
-    }
+    /* ── Workspace ── */
+    .workspace { display:flex; height:580px; }
+    .canvas-area { flex:1; display:flex; flex-direction:column; background:#11111b; overflow:hidden; min-width:0; }
 
-    .value-bg {
-      background-color: #e9ecef;
-      /* light gray */
-      color: #212529;
-      padding: 0.3rem 1rem;
-      border-top-right-radius: 6px;
-      border-bottom-right-radius: 6px;
-      display: inline-block;
-      min-width: 120px;
-      /* optional, for alignment */
-    }
+    /* Toolbar */
+    .ann-toolbar { display:flex; align-items:center; gap:.3rem; padding:.35rem .6rem; background:var(--overlay); border-bottom:1px solid var(--muted); flex-wrap:wrap; min-height:38px; }
+    .ann-toolbar .sep { width:1px; height:20px; background:var(--muted); margin:0 .15rem; flex-shrink:0; }
+    .tool-btn { background:transparent; border:1px solid var(--subtle); color:var(--text2); border-radius:6px; padding:.2rem .5rem; font-size:.75rem; cursor:pointer; display:inline-flex; align-items:center; gap:.25rem; transition:.15s; white-space:nowrap; }
+    .tool-btn:hover  { background:var(--muted); border-color:var(--text3); color:var(--text); }
+    .tool-btn.active { background:var(--purple); border-color:var(--purple); color:var(--overlay); }
+    .tool-btn:disabled { opacity:.3; cursor:not-allowed; pointer-events:none; }
+    .tool-btn.merge-ready { border-color:var(--yellow); color:var(--yellow); }
+    .cls-select { background:var(--muted); border:1px solid var(--subtle); color:var(--text); border-radius:6px; padding:.2rem .4rem; font-size:.75rem; cursor:pointer; }
+    .cls-select:focus { outline:none; border-color:var(--purple); }
+    .hint-bar { padding:.2rem .7rem; font-size:.68rem; color:var(--text3); background:#11111b; min-height:20px; }
 
-    .info-box p {
-      display: flex;
-      margin-bottom: 0.5rem;
-      align-items: center;
-    }
+    /* Canvas wrap */
+    .canvas-wrap { flex:1; overflow:hidden; position:relative; cursor:crosshair; }
+    .canvas-wrap.mode-select { cursor:default; }
+    .canvas-spinner { display:none; position:absolute; inset:0; background:rgba(17,17,27,.7); align-items:center; justify-content:center; z-index:20; }
+    .canvas-spinner.active { display:flex; }
 
-    .label-bg {
-      flex: 0 0 55%;
-      min-width: 180px;
-      text-align: right;
-      margin-right: 0.8rem;
-      border-radius: 6px 0 0 6px;
-      padding: 0.3rem 0.8rem;
-      background-color: #343a40;
-      color: white;
-    }
+    /* Refined overlay view */
+    .refined-view { flex:1; display:none; background:#11111b; overflow:hidden; align-items:center; justify-content:center; }
+    .refined-view img { max-width:100%; max-height:100%; object-fit:contain; }
 
-    .value-bg {
-      flex: 1;
-      padding: 0.3rem 1rem;
-      background-color: #e9ecef;
-      border-radius: 0 6px 6px 0;
-      color: #212529;
-      text-align: left;
+    /* ── Sidebar ── */
+    .ann-sidebar { width:210px; background:var(--overlay); border-left:1px solid var(--muted); display:flex; flex-direction:column; overflow:hidden; flex-shrink:0; }
+    .sidebar-header { padding:.45rem .7rem; font-size:.7rem; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:.6px; border-bottom:1px solid var(--muted); }
+    .ann-list { flex:1; overflow-y:auto; padding:.2rem 0; }
+    .ann-list::-webkit-scrollbar { width:3px; }
+    .ann-list::-webkit-scrollbar-thumb { background:var(--subtle); border-radius:4px; }
+    .ann-item { display:flex; align-items:center; gap:.35rem; padding:.28rem .55rem; cursor:pointer; border-radius:4px; margin:.08rem .25rem; font-size:.75rem; color:var(--text2); transition:.1s; }
+    .ann-item:hover  { background:var(--muted); }
+    .ann-item.selected { background:var(--muted); border-left:2px solid var(--purple); padding-left:.35rem; }
+    .ann-dot  { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .ann-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ann-icon-btn { background:none; border:none; padding:.1rem .15rem; color:var(--subtle); cursor:pointer; font-size:.8rem; line-height:1; border-radius:3px; transition:.1s; }
+    .ann-icon-btn:hover { color:var(--red); background:var(--muted); }
+    .sidebar-footer { padding:.45rem .55rem; border-top:1px solid var(--muted); }
+    .apply-btn { width:100%; background:var(--green); border:none; color:var(--overlay); font-weight:700; border-radius:6px; padding:.38rem; font-size:.78rem; cursor:pointer; transition:.15s; }
+    .apply-btn:hover { background:#94d49d; }
+    .apply-btn:disabled { background:var(--muted); color:var(--text3); cursor:not-allowed; }
+    .apply-status { font-size:.68rem; color:var(--text3); text-align:center; margin-top:.3rem; min-height:13px; }
+
+    /* ── Metrics panel ── */
+    .metrics-panel { padding:.9rem 1.25rem; border-top:1px solid var(--muted); }
+    .metrics-title { font-size:.78rem; font-weight:700; color:var(--purple); margin-bottom:.5rem; }
+    .metric-row { display:flex; justify-content:space-between; align-items:center; padding:.28rem 0; border-bottom:1px solid var(--muted); font-size:.8rem; }
+    .metric-row:last-child { border-bottom:none; }
+    .metric-label { color:var(--text3); }
+    .metric-value { font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
+
+    /* ── Xylem table ── */
+    .xylem-section { padding:0 1.25rem .9rem; }
+    .xylem-section h6 { color:var(--purple); font-size:.78rem; font-weight:700; margin-bottom:.4rem; }
+    .table-dark-custom { background:var(--overlay); border-collapse:collapse; width:100%; font-size:.76rem; }
+    .table-dark-custom th { background:var(--muted); color:var(--text2); padding:.35rem .55rem; border:1px solid var(--subtle); font-weight:600; }
+    .table-dark-custom td { color:var(--text2); padding:.3rem .55rem; border:1px solid var(--muted); }
+    .table-wrap { max-height:180px; overflow-y:auto; overflow-x:hidden; border-radius:6px; border:1px solid var(--muted); }
+    .table-wrap::-webkit-scrollbar { width:4px; }
+    .table-wrap::-webkit-scrollbar-thumb { background:var(--subtle); }
+    .xylem-row { cursor:pointer; transition:.12s; }
+    .xylem-row:hover { background:rgba(203,166,247,.08) !important; }
+    .xylem-row.xylem-row-active { background:rgba(203,166,247,.18) !important; outline:1px solid var(--purple); }
+    .color-dot { width:11px; height:11px; border-radius:50%; display:inline-block; vertical-align:middle; }
+
+    /* ── Action row ── */
+    .action-row { padding:.65rem 1.25rem; display:flex; gap:.5rem; flex-wrap:wrap; border-top:1px solid var(--muted); }
+    .btn-dl { background:var(--blue); border:none; color:var(--overlay); font-weight:600; border-radius:6px; padding:.3rem .8rem; font-size:.76rem; cursor:pointer; transition:.15s; }
+    .btn-dl:hover { filter:brightness(1.1); }
+
+    /* Original image panel */
+    .orig-thumb { border-radius:6px; max-width:100%; max-height:140px; object-fit:contain; border:1px solid var(--muted); }
+
+    /* ── Loading overlay ── */
+    #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(17,17,27,.9); z-index:1050; align-items:center; justify-content:center; }
+    .loading-card { background:var(--surface); border:1px solid var(--muted); border-radius:14px; padding:1.75rem 2rem; width:min(460px,92vw); }
+    .loading-card .ld-title { color:var(--purple); font-weight:700; font-size:.95rem; }
+    .loading-card .ld-sub { font-size:.73rem; color:var(--text3); margin-top:.15rem; margin-bottom:1.1rem; }
+    .ld-bar-track { background:var(--muted); border-radius:99px; height:6px; overflow:hidden; margin-bottom:.55rem; }
+    #ld-bar { height:100%; width:0%; background:linear-gradient(90deg,var(--purple),var(--blue)); border-radius:99px; transition:width .5s ease; }
+    .ld-meta { display:flex; justify-content:space-between; font-size:.72rem; color:var(--text3); margin-bottom:.9rem; }
+    .ld-step-box { background:var(--overlay); border-radius:8px; padding:.55rem .9rem; display:flex; align-items:flex-start; gap:.6rem; }
+    .ld-step-icon { font-size:1rem; line-height:1.4; flex-shrink:0; }
+    .ld-filename { font-size:.72rem; color:var(--text3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ld-stepname { font-size:.8rem; color:var(--text); margin-top:.1rem; }
+
+    /* ── Upload spinner (inline) ── */
+    #uploadSpinRow { display:none; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text3); }
+
+    @media(max-width:768px){
+      .workspace { flex-direction:column; height:auto; }
+      .ann-sidebar { width:100%; height:160px; border-left:none; border-top:1px solid var(--muted); }
     }
   </style>
 </head>
-
 <body>
 
-  <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
-    <div class="container">
-      <a class="navbar-brand fw-bold" href="#">Root Structural Analysis</a>
-    </div>
-  </nav>
+<nav class="navbar navbar-expand-lg fixed-top">
+  <div class="container-fluid px-3">
+    <span class="navbar-brand"><i class="bi bi-diagram-3-fill me-2"></i>XylemVision</span>
+  </div>
+</nav>
 
-  <div class="container">
-    <form method="POST" enctype="multipart/form-data" class="mb-4" id="uploadForm">
+<div class="container-fluid px-3 py-2">
+
+  <!-- ── Upload section ── -->
+  <div class="upload-card">
+    <form id="uploadForm">
       {% csrf_token %}
-      <div id="dropZone" class="border border-primary rounded p-4 text-center mb-3"
-        style="cursor: pointer; background-color: #f8f9fa;">
-        <p class="mb-1">Drag and drop images here or click to select files</p>
-        <input type="file" id="imageUpload" name="image" accept="image/*" multiple required style="display: none;" />
-        <div id="fileList" class="mt-2"></div>
+      <div id="dropZone">
+        <i class="bi bi-cloud-upload fs-3 d-block mb-1"></i>
+        <div style="font-size:.88rem;">Drag &amp; drop images here or click to select</div>
+        <input type="file" id="imageUpload" name="image" accept="image/*" multiple required style="display:none"/>
+        <div id="fileList" class="mt-2" style="font-size:.75rem;"></div>
       </div>
-      <button type="submit" class="btn btn-primary">Analyze</button>
+      <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
+        <button type="submit" class="btn btn-sm" style="background:var(--purple);color:var(--overlay);font-weight:700;">
+          <i class="bi bi-play-fill me-1"></i>Analyze
+        </button>
+        <div id="uploadSpinRow">
+          <div class="spinner-border spinner-border-sm" style="color:var(--purple);"></div>
+          <span id="uploadSpinMsg">Processing…</span>
+        </div>
+      </div>
     </form>
-    {% if results %}
-    <form method="POST" action="{% url 'download_all_xlsx' %}" target="_blank" class="mb-4">
-      {% csrf_token %}
-      <!-- Send filenames to identify which to include -->
-      {% for res in results %}
-      <input type="hidden" name="filenames" value="{{ res.file }}" />
-      {% endfor %}
-      <button type="submit" class="btn btn-primary">Download All XLSX</button>
-    </form>
-    {% endif %}
+    <!-- Download-all bar (shown after first result) -->
+    <div id="download-all-bar" class="mt-2 d-flex gap-2 flex-wrap" style="display:none !important;"></div>
+  </div>
+
+  <!-- ── Results ── -->
+  <div id="results-container"></div>
+
+</div><!-- container -->
+
+<!-- ── Loading overlay ── -->
+<div id="loadingOverlay">
+  <div class="loading-card">
+    <div class="d-flex align-items-center gap-2">
+      <div class="spinner-border spinner-border-sm" style="color:var(--purple);flex-shrink:0;"></div>
+      <span class="ld-title">Analyzing <span id="ld-total">?</span> image(s)</span>
+    </div>
+    <div class="ld-sub">YOLO detection &rarr; SAM segmentation &rarr; Metrics</div>
+    <div class="ld-bar-track"><div id="ld-bar"></div></div>
+    <div class="ld-meta">
+      <span id="ld-pct">0%</span>
+      <span id="ld-img-lbl">—</span>
+    </div>
+    <div class="ld-step-box">
+      <span class="ld-step-icon" id="ld-icon">⏳</span>
+      <div style="min-width:0;">
+        <div class="ld-filename" id="ld-filename">—</div>
+        <div class="ld-stepname" id="ld-step">Initializing…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ─── Global ──────────────────────────────────────────────────────────────────
+const CSRF        = document.querySelector('meta[name="csrf-token"]').content;
+let   allFilenames = [];
+let   cardCount    = 0;
+
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtNum(v,d=2){ return (v||0).toFixed(d); }
+
+// ─── Drag-drop file input ─────────────────────────────────────────────────────
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('imageUpload');
+const fileList   = document.getElementById('fileList');
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => showFiles(e.target.files));
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length){ fileInput.files = e.dataTransfer.files; showFiles(e.dataTransfer.files); }
+});
+function showFiles(files){
+  fileList.innerHTML = Array.from(files).map(f=>`<span class="badge bg-secondary me-1">${escHtml(f.name)}</span>`).join('');
+}
 
 
-    {% if results %}
-    <div class="row g-4">
-      {% for result in results %}
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">{{ result.file }}</h5>
+// ─── Loading bar ─────────────────────────────────────────────────────────────
+const STAGES = [
+  ['YOLO detection',              '🔍', 3000],
+  ['SAM: segmenting xylem',       '🔬', 9000],
+  ['SAM: segmenting vascular bundle', '🌿', 5000],
+  ['SAM: segmenting total root',  '🌱', 5000],
+  ['Computing metrics & overlay', '📊', 2000],
+];
+let _ldTimer = null, _ldTotal = 1, _ldDone = 0, _ldStage = 0;
+
+function showLoading(n){
+  _ldTotal = n; _ldDone = 0; _ldStage = 0;
+  document.getElementById('ld-total').textContent = n;
+  document.getElementById('ld-img-lbl').textContent = '—';
+  document.getElementById('ld-filename').textContent = '—';
+  document.getElementById('ld-step').textContent = 'Waiting for GPU…';
+  document.getElementById('ld-pct').textContent = '0%';
+  document.getElementById('ld-bar').style.width = '0%';
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  document.getElementById('uploadSpinRow').style.display = 'flex';
+}
+function hideLoading(){
+  document.getElementById('loadingOverlay').style.display = 'none';
+  document.getElementById('uploadSpinRow').style.display = 'none';
+  if (_ldTimer){ clearTimeout(_ldTimer); _ldTimer = null; }
+}
+function updateLoadingFile(filename, idx, total){
+  if (_ldTimer){ clearTimeout(_ldTimer); _ldTimer = null; }
+  _ldDone = idx; _ldStage = 0;
+  document.getElementById('ld-img-lbl').textContent = `Image ${idx+1} of ${total}`;
+  document.getElementById('ld-filename').textContent = filename;
+  _animateStage();
+}
+function _animateStage(){
+  if (_ldStage >= STAGES.length) return;
+  const [label, icon, dur] = STAGES[_ldStage];
+  document.getElementById('ld-icon').textContent  = icon;
+  document.getElementById('ld-step').textContent  = label;
+  const done = _ldDone * STAGES.length + _ldStage;
+  const pct  = Math.min(96, Math.round(done / (_ldTotal * STAGES.length) * 100));
+  document.getElementById('ld-bar').style.width   = pct + '%';
+  document.getElementById('ld-pct').textContent   = pct + '%';
+  _ldStage++;
+  _ldTimer = setTimeout(_animateStage, dur);
+}
+
+// ─── Global polygon registry (filename → getter) ─────────────────────────────
+window._cardExport = {};
+
+// ─── Download-all bar ────────────────────────────────────────────────────────
+function updateDownloadAll(){
+  const bar = document.getElementById('download-all-bar');
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <button onclick="dlAllXlsx()" class="btn btn-sm" style="background:var(--blue);color:var(--overlay);font-weight:700;">
+      <i class="bi bi-file-earmark-excel me-1"></i>Download All XLSX
+    </button>
+    <button id="btn-export-training-all" onclick="dlTrainingBatch()" class="btn btn-sm" style="background:var(--purple);color:var(--overlay);font-weight:700;" disabled>
+      <i class="bi bi-archive me-1"></i>Download Training Images <span id="training-count-badge">(0 selected)</span>
+    </button>
+    <button onclick="dlAllOverlays()" class="btn btn-sm" style="background:var(--green);color:var(--overlay);font-weight:700;">
+      <i class="bi bi-images me-1"></i>Download All Overlays
+    </button>`;
+}
+
+function updateTrainingBtn(){
+  const n   = document.querySelectorAll('.train-check:checked').length;
+  const btn = document.getElementById('btn-export-training-all');
+  const badge = document.getElementById('training-count-badge');
+  if (!btn) return;
+  btn.disabled = n === 0;
+  if (badge) badge.textContent = '(' + n + ' selected)';
+}
+
+function dlTrainingBatch(){
+  const checked = Array.from(document.querySelectorAll('.train-check:checked'));
+  if (!checked.length) return;
+  const images = [];
+  checked.forEach(function(cb){
+    const filename = cb.dataset.file;
+    const getter   = window._cardExport[filename];
+    if (!getter) return;
+    const polygons = getter();
+    if (polygons.length) images.push({filename: filename, polygons: polygons});
+  });
+  if (!images.length){ alert('No visible annotations found in selected images.'); return; }
+  const btn = document.getElementById('btn-export-training-all');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Exporting…';
+  fetch('/export_training_batch/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+    body: JSON.stringify({images: images}),
+  }).then(function(r){
+    if (!r.ok) throw new Error('Export failed');
+    return r.blob();
+  }).then(function(blob){
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href    = url;
+    a.download = 'training_data.zip';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    updateTrainingBtn();
+  }).catch(function(){
+    updateTrainingBtn();
+    alert('Export failed. Please try again.');
+  });
+}
+
+function _postForm(action, nameValuePairs){
+  const f = document.createElement('form');
+  f.method='POST'; f.action=action; f.target='_blank';
+  f.innerHTML = `<input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}">`;
+  nameValuePairs.forEach(([n,v]) => { f.innerHTML += `<input type="hidden" name="${n}" value="${escHtml(v)}"`+'>'; });
+  document.body.appendChild(f); f.submit(); document.body.removeChild(f);
+}
+function dlAllXlsx()    { _postForm('/download_all_xlsx/',  allFilenames.map(f=>['filenames',f])); }
+function dlAllOverlays(){ _postForm('/download_overlays/',  allFilenames.map(f=>['filenames',f])); }
+
+// ─── SSE form submission ──────────────────────────────────────────────────────
+document.getElementById('uploadForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const files = fileInput.files;
+  if (!files.length) return;
+
+  allFilenames = [];
+  cardCount    = 0;
+  document.getElementById('results-container').innerHTML = '';
+  document.getElementById('download-all-bar').style.display = 'none';
+  showLoading(files.length);
+
+  const fd = new FormData(this);
+  fetch('/analyze_stream/', { method:'POST', body:fd })
+  .then(resp => {
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = '';
+
+    function pump(){
+      return reader.read().then(({done, value}) => {
+        if (done){ hideLoading(); return; }
+        buffer += decoder.decode(value, {stream:true});
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts){
+          if (!part.startsWith('data: ')) continue;
+          let ev;
+          try { ev = JSON.parse(part.slice(6)); } catch(e){ continue; }
+          if (ev.type === 'start'){
+            updateLoadingFile(ev.file, ev.index, ev.total);
+          } else if (ev.type === 'result'){
+            appendResultCard(ev, ++cardCount);
+            allFilenames.push(ev.file);
+            updateDownloadAll();
+          } else if (ev.type === 'error'){
+            appendErrorCard(ev.file, ev.message, ++cardCount);
+          } else if (ev.type === 'done'){
+            hideLoading();
+          }
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(()=>hideLoading());
+});
+
+// ─── Error card ───────────────────────────────────────────────────────────────
+function appendErrorCard(filename, msg, idx){
+  document.getElementById('results-container').insertAdjacentHTML('beforeend',`
+    <div class="result-card" id="card-${idx}">
+      <div class="result-header">
+        <i class="bi bi-exclamation-triangle" style="color:var(--red);"></i>
+        <h5>${escHtml(filename)}</h5>
+      </div>
+      <div style="padding:1rem 1.25rem;color:var(--red);font-size:.82rem;">Error: ${escHtml(msg)}</div>
+    </div>`);
+}
+
+// ─── Card HTML builder ────────────────────────────────────────────────────────
+function buildCardHTML(data, idx){
+  // Metrics
+  const m = data.metrics || {};
+  const metricsHTML = `
+    <div class="metric-row"><span class="metric-label">Xylem Count</span><span class="metric-value n-xylem">${data.n_xylem||0}</span></div>
+    <div class="metric-row"><span class="metric-label">VB Total Area (px²)</span><span class="metric-value vb-area">${fmtNum(m.vb_total_area)}</span></div>
+    <div class="metric-row"><span class="metric-label">VB Max Diameter (px)</span><span class="metric-value vb-diam">${fmtNum(m.vb_max_diameter)}</span></div>
+    <div class="metric-row"><span class="metric-label">Root Total Area (px²)</span><span class="metric-value root-area">${fmtNum(m.root_total_area)}</span></div>
+    <div class="metric-row"><span class="metric-label">Root Max Diameter (px)</span><span class="metric-value root-diam">${fmtNum(m.root_max_diameter)}</span></div>`;
+
+  // Xylem table
+  let xylemHTML = '';
+  const mx = data.merged_xylem || [];
+  if (mx.length){
+    const keys = Object.keys(mx[0]).filter(k => k!=='instance' && k!=='rgb');
+    xylemHTML = `
+    <div class="xylem-section" id="xylem-section-${idx}">
+      <h6><i class="bi bi-table me-1"></i>Xylem Details <span style="color:var(--text3);font-weight:400;font-size:.7rem;">(click row to highlight on canvas)</span></h6>
+      <div class="table-wrap">${buildXylemTable(mx, keys)}</div>
+    </div>`;
+  }
+
+  return `
+  <div class="result-card" id="card-${idx}">
+    <div class="result-header">
+      <i class="bi bi-image" style="color:var(--purple);"></i>
+      <h5 title="${escHtml(data.file)}">${escHtml(data.file)}</h5>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:.4rem;">
+        <span style="font-size:.72rem;color:var(--text3);">
+          <span style="color:var(--red);">■</span> ${data.n_xylem||0}x
+          <span style="color:var(--green);margin-left:.3rem;">■</span> ${data.n_vb||0}VB
+          <span style="color:var(--peach);margin-left:.3rem;">■</span> ${data.n_root||0}R
+        </span>
+        <label class="train-label" title="Mark for training export" style="display:flex;align-items:center;gap:.3rem;cursor:pointer;margin-left:.5rem;font-size:.75rem;color:var(--mauve);user-select:none;">
+          <input type="checkbox" class="train-check" data-file="${escHtml(data.file)}" onchange="updateTrainingBtn()" style="accent-color:var(--mauve);width:14px;height:14px;cursor:pointer;">
+          Training
+        </label>
+        <button class="tool-btn" id="btn-orig-${idx}" title="Show original image" style="margin-left:.5rem;"><i class="bi bi-eye"></i> Original</button>
+        <button class="tool-btn" id="btn-toggle-${idx}" title="Toggle refined overlay view (R)" style="margin-left:.2rem;"><i class="bi bi-layers"></i> Refined</button>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <!-- Canvas area -->
+      <div class="canvas-area" id="canvas-area-${idx}">
+        <div class="ann-toolbar">
+          <select class="cls-select" id="cls-${idx}">
+            <option value="Xylem">⬤ Xylem</option>
+            <option value="Vascular bundle">⬤ Vascular bundle</option>
+            <option value="Total root">⬤ Total root</option>
+          </select>
+          <div class="sep"></div>
+          <button class="tool-btn active" data-mode="select" id="btn-select-${idx}" title="Select/edit polygons (S)"><i class="bi bi-cursor"></i> Select</button>
+          <button class="tool-btn" data-mode="box"    id="btn-box-${idx}"    title="Box+SAM (B)"><i class="bi bi-bounding-box"></i> Box+SAM</button>
+          <button class="tool-btn" data-mode="click"  id="btn-click-${idx}"  title="Click+SAM (C)"><i class="bi bi-cursor-fill"></i> Click+SAM</button>
+          <div class="sep"></div>
+          <button class="tool-btn" id="btn-merge-${idx}" title="Merge selected polygons (M)" disabled><i class="bi bi-union"></i> Merge</button>
+          <div class="sep"></div>
+          <button class="tool-btn" id="btn-undo-${idx}" title="Undo (Ctrl+Z)" disabled><i class="bi bi-arrow-counterclockwise"></i></button>
+          <button class="tool-btn" id="btn-redo-${idx}" title="Redo (Ctrl+Y)" disabled><i class="bi bi-arrow-clockwise"></i></button>
+          <div class="sep"></div>
+          <button class="tool-btn" id="zoom-in-${idx}"  title="Zoom in (+)"><i class="bi bi-zoom-in"></i></button>
+          <button class="tool-btn" id="zoom-out-${idx}" title="Zoom out (-)"><i class="bi bi-zoom-out"></i></button>
+          <button class="tool-btn" id="zoom-fit-${idx}" title="Fit view (F)"><i class="bi bi-fullscreen"></i></button>
+        </div>
+        <div class="hint-bar" id="hint-${idx}">Select — click polygon to select &nbsp;|&nbsp; double-click to edit vertices &nbsp;|&nbsp; scroll=zoom &nbsp;|&nbsp; Alt+drag=pan</div>
+        <div class="canvas-wrap" id="wrap-${idx}">
+          <canvas id="fab-${idx}"></canvas>
+          <div class="canvas-spinner" id="spin-${idx}">
+            <div class="spinner-border" style="color:var(--purple);width:2.5rem;height:2.5rem;"></div>
           </div>
-          <div class="card-body">
-            <div class="image-pair d-flex gap-3 mb-4 justify-content-center">
-              <div class="text-center">
-                <h6>Original</h6>
-                <img src="{{ result.original_image }}" alt="Original Image" />
-              </div>
-              <div class="text-center">
-                <h6>Overlay</h6>
-                <img src="{{ result.overlay_image }}" alt="Overlay Image" />
-              </div>
-            </div>
-
-
-
-            <div class="info-box">
-              <h6 class="text-primary">Summary</h6>
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <p>
-                    <span class="label-bg"><strong>Xylem Count:</strong></span>
-                    <span class="value-bg">{{ result.n_xylem }}</span>
-                  </p>
-                  <p>
-                    <span class="label-bg"><strong>Vascular Bundle Total Area:</strong></span>
-                    <span class="value-bg">{{ result.metrics.vb_total_area }}</span>
-                  </p>
-                  <p>
-                    <span class="label-bg"><strong>Vascular Bundle Max Diameter:</strong></span>
-                    <span class="value-bg">{{ result.metrics.vb_max_diameter }}</span>
-                  </p>
-                </div>
-                <div class="col-md-6">
-                  <p>
-                    <span class="label-bg"><strong>Root Total Area:</strong></span>
-                    <span class="value-bg">{{ result.metrics.root_total_area }}</span>
-                  </p>
-                  <p>
-                    <span class="label-bg"><strong>Root Max Diameter:</strong></span>
-                    <span class="value-bg">{{ result.metrics.root_max_diameter }}</span>
-                  </p>
-                </div>
-              </div>
-              <div class="d-flex justify-content-end gap-2 mb-3">
-                <form method="POST" action="{% url 'download_xlsx' %}" target="_blank" style="display:inline;">
-                  {% csrf_token %}
-                  <input type="hidden" name="filename" value="{{ result.file }}" />
-                  <button type="submit" class="btn btn-success btn-sm">Download XLSX</button>
-                </form>
-              </div>
-            </div>
-
-
-            {% if result.merged_xylem %}
-            <h6>Xylem Details + Overlay Colors</h6>
-            <div class="table-responsive mb-4" style="max-height: 250px; overflow-y: auto;">
-              <table class="table table-sm table-bordered table-hover">
-                <thead class="table-light sticky-top">
-                  <tr>
-                    {% for key in result.merged_xylem.0.keys %}
-                    {% if key != 'instance' and key != 'rgb' %}
-                    <th>{{ key|capfirst }}</th>
-                    {% endif %}
-                    {% endfor %}
-                    <th>Color</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in result.merged_xylem %}
-                  <tr>
-                    {% for key, val in row.items %}
-                    {% if key != 'instance' and key != 'rgb' %}
-                    <td>{{ val }}</td>
-                    {% endif %}
-                    {% endfor %}
-                    <td>
-                      <div class="color-box"
-                        style="background-color: rgb({{ row.rgb.0 }}, {{ row.rgb.1 }}, {{ row.rgb.2 }});"></div>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            {% endif %}
-
-            {% if result.extra_metrics %}
-            <h6>Unmatched Xylem Metrics</h6>
-            <div class="table-responsive mb-3">
-              <table class="table table-sm table-bordered">
-                <thead class="table-light">
-                  <tr>
-                    {% for key in result.extra_metrics.0.keys %}
-                    {% if key != 'instance' %}
-                    <th>{{ key|capfirst }}</th>
-                    {% endif %}
-                    {% endfor %}
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in result.extra_metrics %}
-                  <tr>
-                    {% for key, val in row.items %}
-                    {% if key != 'instance' %}
-                    <td>{{ val }}</td>
-                    {% endif %}
-                    {% endfor %}
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            {% endif %}
-
-            {% if result.extra_colours %}
-            <h6>Unmatched Overlay Colors</h6>
-            <table class="table table-sm table-bordered mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Color</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for color in result.extra_colours %}
-                <tr>
-                  <td>
-                    <div class="color-box"
-                      style="background-color: rgb({{ color.rgb.0 }}, {{ color.rgb.1 }}, {{ color.rgb.2 }});"></div>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% endif %}
+          <div id="lazy-ph-${idx}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#11111b;color:var(--subtle);font-size:.78rem;gap:.4rem;">
+            <div class="spinner-border spinner-border-sm" style="color:var(--subtle);"></div> Scroll to load…
           </div>
         </div>
       </div>
-      {% endfor %}
+      <!-- Refined overlay view (hidden by default) -->
+      <div class="refined-view" id="refined-view-${idx}">
+        <img id="refined-img-${idx}" src="${data.overlay_image}" style="max-width:100%;max-height:100%;object-fit:contain;"/>
+      </div>
+      <!-- Sidebar -->
+      <div class="ann-sidebar">
+        <div class="sidebar-header"><i class="bi bi-layers me-1"></i>Annotations</div>
+        <div class="ann-list" id="ann-list-${idx}"></div>
+        <div class="sidebar-footer">
+          <button class="apply-btn" id="apply-${idx}"><i class="bi bi-check2-circle me-1"></i>Apply Corrections</button>
+          <div class="apply-status" id="status-${idx}"></div>
+        </div>
+      </div>
     </div>
-    {% endif %}
-  </div>
 
-  <!-- Loading Overlay -->
-  <div id="loadingOverlay" style="
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.8);
-    z-index: 1050;
-    align-items: center;
-    justify-content: center;
-  ">
-    <div class="spinner-border text-primary" role="status" style="width: 4rem; height: 4rem">
-      <span class="visually-hidden">Loading...</span>
+    <!-- Original image panel (hidden) -->
+    <div id="orig-panel-${idx}" style="display:none;padding:.65rem 1.25rem;border-top:1px solid var(--muted);">
+      <div style="font-size:.72rem;color:var(--text3);margin-bottom:.35rem;">Original image</div>
+      <img src="${data.original_image}" class="orig-thumb" alt="original"/>
     </div>
-  </div>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    const form = document.querySelector("form");
-    const loadingOverlay = document.getElementById("loadingOverlay");
-    form.addEventListener("submit", () => {
-      loadingOverlay.style.display = "flex";
-    });
+    <!-- Metrics -->
+    <div class="metrics-panel" id="metrics-${idx}">
+      <div class="metrics-title"><i class="bi bi-bar-chart-line me-1"></i>Summary Metrics</div>
+      ${metricsHTML}
+    </div>
 
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('imageUpload');
-    const fileList = document.getElementById('fileList');
+    ${xylemHTML}
 
-    // Clicking drop zone triggers file input click
-    dropZone.addEventListener('click', () => {
-      fileInput.click();
-    });
+    <!-- Actions -->
+    <div class="action-row">
+      <button class="btn-dl" onclick="_dlSingle('${escHtml(data.file)}')">
+        <i class="bi bi-file-earmark-excel me-1"></i>Download XLSX
+      </button>
+    </div>
+  </div>`;
+}
 
-    // Show selected files names
-    function updateFileList(files) {
-      if (files.length === 0) {
-        fileList.innerHTML = '';
-        return;
+function buildXylemTable(mx, keys){
+  let h = `<table class="table-dark-custom"><thead><tr>`;
+  keys.forEach(k => { h += `<th>${escHtml(k.charAt(0).toUpperCase()+k.slice(1))}</th>`; });
+  h += `<th>Color</th></tr></thead><tbody>`;
+  mx.forEach((row, i) => {
+    h += `<tr class="xylem-row" data-xylem-idx="${i}">`;
+    keys.forEach(k => {
+      let cell = '';
+      if (row[k] !== undefined){
+        if (typeof row[k] === 'number'){
+          cell = (k === 'id' || Number.isInteger(row[k])) ? String(Math.round(row[k])) : fmtNum(row[k]);
+        } else {
+          cell = escHtml(String(row[k]));
+        }
       }
-      const listItems = Array.from(files).map(file => `<div>${file.name}</div>`).join('');
-      fileList.innerHTML = listItems;
+      h += `<td>${cell}</td>`;
+    });
+    const rgb = row.rgb||[180,180,180];
+    h += `<td><span class="color-dot" style="background:rgb(${rgb[0]},${rgb[1]},${rgb[2]});"></span></td></tr>`;
+  });
+  h += '</tbody></table>';
+  return h;
+}
+
+function _dlSingle(filename){
+  _postForm('/download_xlsx/', [['filename', filename]]);
+}
+
+// ─── Append card + lazy-init ───────────────────────────────────────────────────
+function appendResultCard(data, idx){
+  const html = buildCardHTML(data, idx);
+  document.getElementById('results-container').insertAdjacentHTML('beforeend', html);
+
+  const card = document.getElementById('card-'+idx);
+  let initialized = false;
+  const obs = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting && !initialized){
+      initialized = true; obs.disconnect();
+      initCard(data, idx);
     }
+  }, {threshold:0.05});
+  obs.observe(card);
+}
 
-    // When files are selected via dialog
-    fileInput.addEventListener('change', (e) => {
-      updateFileList(e.target.files);
+// ─── Per-card initialisation ──────────────────────────────────────────────────
+function initCard(data, IDX){
+  const FILENAME = data.file;
+  const ORIG_B64 = data.original_image;
+  const CONTOURS = data.contours || {};
+  const IMG_W    = data.img_width;
+  const IMG_H    = data.img_height;
+
+  const CLS_FILL   = {'Xylem':'rgba(243,139,168,.32)','Vascular bundle':'rgba(166,227,161,.28)','Total root':'rgba(250,179,135,.28)'};
+  const CLS_STROKE = {'Xylem':'#f38ba8','Vascular bundle':'#a6e3a1','Total root':'#fab387'};
+  const CLS_HEX    = {'Xylem':'#f38ba8','Vascular bundle':'#a6e3a1','Total root':'#fab387'};
+  const HINTS = {
+    select: 'Select — click polygon &nbsp;|&nbsp; double-click to edit vertices &nbsp;|&nbsp; scroll=zoom &nbsp;|&nbsp; Alt+drag=pan',
+    box:    'Box+SAM — drag a rectangle; SAM traces the boundary',
+    click:  'Click+SAM — click inside any structure; SAM auto-segments it',
+  };
+
+  // Canvas setup
+  const wrap   = document.getElementById('wrap-'+IDX);
+  const canvEl = document.getElementById('fab-'+IDX);
+  const MAX_W  = wrap.clientWidth  || 800;
+  const MAX_H  = wrap.clientHeight || 500;
+  const scaleX = MAX_W / IMG_W;
+  const scaleY = MAX_H / IMG_H;
+  const DISP   = Math.min(scaleX, scaleY, 1);
+  const CW     = Math.round(IMG_W * DISP);
+  const CH     = Math.round(IMG_H * DISP);
+  canvEl.width = CW; canvEl.height = CH;
+  const fc = new fabric.Canvas('fab-'+IDX, {width:CW, height:CH, selection:true});
+
+  // Annotation state
+  let annotations = [];
+  let uidCounter  = 0;
+  let currentOverlayB64 = data.overlay_image;
+
+  // ── Undo / Redo history ───────────────────────────────────────────────────
+  let _history = [];
+  let _histIdx = -1;
+  let _histPaused = false;
+
+  function _getSnap(){
+    return annotations.map(function(ann){
+      return {
+        cls:    ann.cls,
+        xylIdx: ann.fabricObj.data.xylIdx,
+        color:  ann.fabricObj.data.color || null,
+        visible:ann.visible,
+        points: polyToImagePts(ann.fabricObj),
+      };
     });
-
-    // Drag events
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropZone.classList.add('bg-primary', 'text-white');
-    });
-
-    dropZone.addEventListener('dragleave', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('bg-primary', 'text-white');
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('bg-primary', 'text-white');
-
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        fileInput.files = files; // Update file input files
-        updateFileList(files);
+  }
+  function _pushSnap(){
+    if (_histPaused) return;
+    _history = _history.slice(0, _histIdx + 1);
+    _history.push(_getSnap());
+    if (_history.length > 40) _history.shift();
+    _histIdx = _history.length - 1;
+    _updateHistBtns();
+  }
+  function _applySnap(snap){
+    _histPaused = true;
+    annotations.slice().forEach(a => fc.remove(a.fabricObj));
+    annotations = []; uidCounter = 0;
+    snap.forEach(function(s){
+      addAnnotation(s.points, s.cls, s.xylIdx !== null ? s.xylIdx : undefined, s.color || undefined);
+      if (!s.visible){
+        const ann = annotations[annotations.length - 1];
+        ann.visible = false; ann.fabricObj.set('visible', false);
       }
     });
+    _histPaused = false;
+    fc.discardActiveObject(); fc.requestRenderAll(); renderSidebar();
+  }
+  function _updateHistBtns(){
+    const bu = document.getElementById('btn-undo-'+IDX);
+    const br = document.getElementById('btn-redo-'+IDX);
+    if (bu) bu.disabled = _histIdx <= 0;
+    if (br) br.disabled = _histIdx >= _history.length - 1;
+  }
+  function doUndo(){
+    if (_histIdx <= 0) return;
+    _histIdx--;
+    _applySnap(_history[_histIdx]);
+    _updateHistBtns();
+  }
+  function doRedo(){
+    if (_histIdx >= _history.length - 1) return;
+    _histIdx++;
+    _applySnap(_history[_histIdx]);
+    _updateHistBtns();
+  }
+  document.getElementById('btn-undo-'+IDX).addEventListener('click', doUndo);
+  document.getElementById('btn-redo-'+IDX).addEventListener('click', doRedo);
 
-  </script>
+  // ── Polygon → image-space helper ──────────────────────────────────────────
+  // calcTransformMatrix() gives canvas-space (before viewport) — just divide by DISP
+  function polyToImagePts(obj){
+    const matrix = obj.calcTransformMatrix();
+    return obj.points.map(function(p){
+      const local = {x: p.x - obj.pathOffset.x, y: p.y - obj.pathOffset.y};
+      const abs   = fabric.util.transformPoint(local, matrix);
+      return [Math.round(abs.x / DISP), Math.round(abs.y / DISP)];
+    });
+  }
+
+  // ── Load background image ──────────────────────────────────────────────────
+  fabric.Image.fromURL(ORIG_B64, function(img){
+    img.set({left:0,top:0,scaleX:CW/img.width,scaleY:CH/img.height,selectable:false,evented:false,hoverCursor:'default'});
+    img.data = {isBackground:true};
+    fc.add(img); fc.sendToBack(img);
+    drawInitialContours();
+    fc.renderAll();
+    _pushSnap(); // save initial predicted state so user can undo back to it
+    const ph = document.getElementById('lazy-ph-'+IDX);
+    if (ph) ph.style.display = 'none';
+  });
+
+  // ── Draw initial predicted contours ───────────────────────────────────────
+  function drawInitialContours(){
+    const mergedXylem = data.merged_xylem || [];
+    ['Total root','Vascular bundle','Xylem'].forEach(function(cls){
+      (CONTOURS[cls]||[]).forEach(function(pts, inst){
+        if (pts && pts.length >= 3){
+          const color = (cls==='Xylem' && mergedXylem[inst]) ? mergedXylem[inst].rgb : undefined;
+          addAnnotation(pts, cls, cls==='Xylem' ? inst : undefined, color);
+        }
+      });
+    });
+    bindXylemTableClicks();
+  }
+
+  // ── Create & register a polygon ───────────────────────────────────────────
+  function addAnnotation(rawPts, cls, xylIdx, color){
+    const pts = rawPts.map(p => ({x:p[0]*DISP, y:p[1]*DISP}));
+    let fill, stroke;
+    if (color){
+      const [r,g,b] = color;
+      fill   = `rgba(${r},${g},${b},0.32)`;
+      stroke = `rgb(${r},${g},${b})`;
+    } else {
+      fill   = CLS_FILL[cls]   || 'rgba(200,200,0,.3)';
+      stroke = CLS_STROKE[cls] || '#cccc00';
+    }
+    const poly = new fabric.Polygon(pts, {
+      fill,
+      stroke,
+      strokeWidth:        1.5,
+      objectCaching:      false,
+      transparentCorners: false,
+      cornerColor:        '#cba6f7',
+      cornerSize:         6,
+      hasBorders:         true,
+    });
+    const id = ++uidCounter;
+    poly.data = {annId:id, cls, xylIdx: xylIdx !== undefined ? xylIdx : null, color: color||null};
+    annotations.push({id, cls, fabricObj:poly, visible:true});
+    fc.add(poly);
+    _pushSnap();
+    renderSidebar();
+    return {id, poly};
+  }
+
+  // ── Xylem table click → canvas highlight ─────────────────────────────────
+  function bindXylemTableClicks(){
+    const sec = document.getElementById('xylem-section-'+IDX);
+    if (!sec) return;
+    sec.querySelectorAll('tr.xylem-row').forEach(function(row){
+      row.addEventListener('click', function(){
+        const xIdx = +row.dataset.xylemIdx;
+        const ann  = annotations.find(a => a.cls==='Xylem' && a.fabricObj.data && a.fabricObj.data.xylIdx===xIdx);
+        if (ann){
+          setMode('select');
+          fc.setActiveObject(ann.fabricObj);
+          fc.requestRenderAll();
+          renderSidebar();
+        }
+        sec.querySelectorAll('tr.xylem-row').forEach(r => r.classList.remove('xylem-row-active'));
+        row.classList.add('xylem-row-active');
+      });
+    });
+  }
+
+  // ── Sidebar ───────────────────────────────────────────────────────────────
+  function renderSidebar(){
+    const active = fc.getActiveObject();
+    const el = document.getElementById('ann-list-'+IDX);
+    if (!annotations.length){
+      el.innerHTML = '<div style="padding:.7rem;color:var(--subtle);font-size:.75rem;text-align:center;">No annotations</div>';
+      return;
+    }
+    el.innerHTML = annotations.map(function(ann, i){
+      const isSelected = (active && active.data && active.data.annId===ann.id);
+      const xIdx = ann.fabricObj && ann.fabricObj.data && ann.fabricObj.data.xylIdx !== null && ann.fabricObj.data.xylIdx !== undefined ? ann.fabricObj.data.xylIdx : null;
+      const label = ann.cls === 'Xylem' && xIdx !== null
+        ? 'Xylem ' + xIdx
+        : ann.cls.replace('Vascular bundle','VB') + ' ' + (i+1);
+      return `<div class="ann-item ${isSelected?'selected':''}" data-id="${ann.id}">
+        <span class="ann-dot" style="background:${CLS_HEX[ann.cls]||'#cdd6f4'};opacity:${ann.visible?1:.35};"></span>
+        <span class="ann-name" title="${escHtml(ann.cls)}">${escHtml(label)}</span>
+        <button class="ann-icon-btn vis-btn" data-id="${ann.id}" title="Toggle visibility">
+          <i class="bi bi-${ann.visible?'eye':'eye-slash'}"></i></button>
+        <button class="ann-icon-btn del-btn-sb" data-id="${ann.id}" title="Delete">
+          <i class="bi bi-trash3"></i></button>
+      </div>`;
+    }).join('');
+
+    el.querySelectorAll('.ann-item').forEach(function(item){
+      item.addEventListener('click', function(e){
+        if (e.target.closest('.ann-icon-btn')) return;
+        const ann = annotations.find(a => a.id===+item.dataset.id);
+        if (ann){ fc.setActiveObject(ann.fabricObj); fc.requestRenderAll(); renderSidebar(); }
+      });
+    });
+    el.querySelectorAll('.vis-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const ann = annotations.find(a => a.id===+btn.dataset.id);
+        if (ann){ ann.visible=!ann.visible; ann.fabricObj.set('visible',ann.visible); fc.requestRenderAll(); renderSidebar(); }
+      });
+    });
+    el.querySelectorAll('.del-btn-sb').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        removeAnnotation(+btn.dataset.id);
+      });
+    });
+  }
+
+  function removeAnnotation(id){
+    const idx = annotations.findIndex(a => a.id===id);
+    if (idx<0) return;
+    fc.remove(annotations[idx].fabricObj);
+    annotations.splice(idx,1);
+    fc.discardActiveObject();
+    fc.requestRenderAll();
+    _pushSnap();
+    renderSidebar();
+  }
+
+  // ── Merge button enable/disable ───────────────────────────────────────────
+  function updateMergeBtn(){
+    const sel = fc.getActiveObjects().filter(o => o.data && o.data.annId);
+    const btn = document.getElementById('btn-merge-'+IDX);
+    if (!btn) return;
+    btn.disabled = sel.length < 2;
+    btn.classList.toggle('merge-ready', sel.length >= 2);
+  }
+  fc.on('selection:created', function(){ renderSidebar(); updateMergeBtn(); });
+  fc.on('selection:updated', function(){ renderSidebar(); updateMergeBtn(); });
+  fc.on('selection:cleared', function(){ renderSidebar(); updateMergeBtn(); });
+  fc.on('object:modified', function(){ _pushSnap(); });
+
+  // ── Merge ─────────────────────────────────────────────────────────────────
+  document.getElementById('btn-merge-'+IDX).addEventListener('click', function(){
+    const selected = fc.getActiveObjects().filter(o => o.data && o.data.annId);
+    if (selected.length < 2) return;
+    const cls  = selected[0].data.cls;
+    const spin = document.getElementById('spin-'+IDX);
+    const stat = document.getElementById('status-'+IDX);
+    spin.classList.add('active');
+    stat.textContent = 'Merging via SAM…';
+
+    // Compute combined bounding box of all selected polygons in image space
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    selected.forEach(function(obj){
+      polyToImagePts(obj).forEach(function(pt){
+        if (pt[0] < minX) minX = pt[0];
+        if (pt[1] < minY) minY = pt[1];
+        if (pt[0] > maxX) maxX = pt[0];
+        if (pt[1] > maxY) maxY = pt[1];
+      });
+    });
+
+    // Run SAM on the combined bounding box
+    fetch('/sam_prompt/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME, mode:'box', box:[minX, minY, maxX, maxY], class:cls}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      if (d.contour && d.contour.length >= 3){
+        selected.map(o=>o.data.annId).forEach(id => removeAnnotation(id));
+        fc.discardActiveObject();
+        addAnnotation(d.contour, cls);
+        fc.requestRenderAll();
+        stat.textContent = 'Merged — apply when ready.';
+      } else {
+        stat.textContent = 'Merge failed — no valid contour.';
+      }
+    }).catch(function(){ spin.classList.remove('active'); stat.textContent='Merge request failed.'; });
+  });
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  document.addEventListener('keydown', function(e){
+    if (e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+    // Only act if this card is in view
+    const card = document.getElementById('card-'+IDX);
+    if (!card || !card.getBoundingClientRect().height) return;
+    if (e.key==='Delete'||e.key==='Backspace'){
+      const obj = fc.getActiveObject();
+      if (obj && obj.data && obj.data.annId) removeAnnotation(obj.data.annId);
+    }
+    if (e.key==='s'||e.key==='S') setMode('select');
+    if (e.key==='b'||e.key==='B') setMode('box');
+    if (e.key==='c'||e.key==='C') setMode('click');
+    if (e.key==='m'||e.key==='M'){ const mb=document.getElementById('btn-merge-'+IDX); if(mb&&!mb.disabled) mb.click(); }
+    if (e.key==='r'||e.key==='R'){ document.getElementById('btn-toggle-'+IDX).click(); }
+    if (e.key==='+'||e.key==='=') zoomBy(1.2);
+    if (e.key==='-') zoomBy(1/1.2);
+    if (e.key==='f'||e.key==='F') zoomFit();
+    if ((e.ctrlKey||e.metaKey) && !e.shiftKey && (e.key==='z'||e.key==='Z')){ e.preventDefault(); doUndo(); }
+    if ((e.ctrlKey||e.metaKey) && ((e.shiftKey && (e.key==='z'||e.key==='Z')) || e.key==='y'||e.key==='Y')){ e.preventDefault(); doRedo(); }
+  });
+
+  // ── Vertex editing on double-click ────────────────────────────────────────
+  fc.on('mouse:dblclick', function(opt){
+    const obj = opt.target;
+    if (!obj||obj.type!=='polygon'||currentMode!=='select') return;
+    const lastIdx = obj.points.length-1;
+    obj.cornerStyle='circle'; obj.cornerSize=8; obj.cornerColor='#cba6f7'; obj.hasBorders=false;
+    obj.controls = obj.points.reduce(function(acc,pt,i){
+      acc['p'+i] = new fabric.Control({
+        positionHandler: polyPosHandler,
+        actionHandler:   anchorWrapper(i>0?i-1:lastIdx, polyActionHandler),
+        actionName:      'modifyPolygon',
+        pointIndex:      i,
+      });
+      return acc;
+    }, {});
+    fc.setActiveObject(obj); fc.requestRenderAll();
+  });
+  fc.on('selection:cleared', function(){
+    fc.getObjects('polygon').forEach(function(obj){
+      if (obj.cornerStyle==='circle'){ obj.cornerStyle='rect'; obj.hasBorders=true; obj.controls=fabric.Object.prototype.controls; }
+    });
+  });
+  function polyPosHandler(dim,finalMatrix,obj){
+    const x=obj.points[this.pointIndex].x-obj.pathOffset.x;
+    const y=obj.points[this.pointIndex].y-obj.pathOffset.y;
+    return fabric.util.transformPoint({x,y}, fabric.util.multiplyTransformMatrices(obj.canvas.viewportTransform,obj.calcTransformMatrix()));
+  }
+  function polyActionHandler(ev,transform,x,y){
+    const poly=transform.target, ctrl=poly.controls[poly.__corner];
+    const local=poly.toLocalPoint(new fabric.Point(x,y),'center','center');
+    const base=poly._getNonTransformedDimensions(), size=poly._getTransformedDimensions(0,0);
+    poly.points[ctrl.pointIndex]={x:local.x*base.x/size.x+poly.pathOffset.x, y:local.y*base.y/size.y+poly.pathOffset.y};
+    return true;
+  }
+  function anchorWrapper(anchorIdx,fn){
+    return function(ev,transform,x,y){
+      const obj=transform.target;
+      const absPoint=fabric.util.transformPoint({x:obj.points[anchorIdx].x-obj.pathOffset.x,y:obj.points[anchorIdx].y-obj.pathOffset.y},obj.calcTransformMatrix());
+      const done=fn(ev,transform,x,y);
+      obj._setPositionDimensions({});
+      const base=obj._getNonTransformedDimensions();
+      const nx=(obj.points[anchorIdx].x-obj.pathOffset.x)/base.x;
+      const ny=(obj.points[anchorIdx].y-obj.pathOffset.y)/base.y;
+      obj.setPositionByOrigin(absPoint,nx+.5,ny+.5);
+      return done;
+    };
+  }
+
+  // ── Mode switching ────────────────────────────────────────────────────────
+  let currentMode = 'select';
+  function setMode(mode){
+    currentMode = mode;
+    ['select','box','click'].forEach(function(m){
+      const btn=document.getElementById('btn-'+m+'-'+IDX);
+      if (btn) btn.classList.toggle('active', m===mode);
+    });
+    document.getElementById('hint-'+IDX).innerHTML = HINTS[mode]||'';
+    fc.isDrawingMode = false;
+    const isSel = (mode==='select');
+    fc.selection = isSel;
+    fc.getObjects('polygon').forEach(o=>{ o.selectable=isSel; o.evented=isSel; });
+    fc.getObjects('image').forEach(o=>{ o.selectable=false; o.evented=false; });
+    wrap.style.cursor = isSel ? 'default' : 'crosshair';
+    if (!isSel) fc.discardActiveObject();
+    fc.requestRenderAll();
+  }
+  document.querySelectorAll('#card-'+IDX+' .tool-btn[data-mode]').forEach(function(btn){
+    btn.addEventListener('click', function(){ setMode(btn.dataset.mode); });
+  });
+
+  // ── Zoom ─────────────────────────────────────────────────────────────────
+  fc.on('mouse:wheel', function(opt){
+    const delta=opt.e.deltaY;
+    let z=fc.getZoom()*(0.999**delta);
+    z=Math.min(Math.max(z,0.15),10);
+    fc.zoomToPoint({x:opt.e.offsetX,y:opt.e.offsetY},z);
+    opt.e.preventDefault(); opt.e.stopPropagation();
+  });
+  let isPanning=false,lastX=0,lastY=0;
+  fc.on('mouse:down', opt=>{ if(opt.e.altKey){isPanning=true;fc.selection=false;lastX=opt.e.clientX;lastY=opt.e.clientY;} });
+  fc.on('mouse:move', opt=>{ if(!isPanning)return; const vpt=fc.viewportTransform; vpt[4]+=opt.e.clientX-lastX; vpt[5]+=opt.e.clientY-lastY; fc.requestRenderAll(); lastX=opt.e.clientX; lastY=opt.e.clientY; });
+  fc.on('mouse:up', ()=>{ isPanning=false; });
+  function zoomBy(f){ const z=Math.min(Math.max(fc.getZoom()*f,0.15),10); fc.zoomToPoint({x:CW/2,y:CH/2},z); }
+  function zoomFit(){ fc.setViewportTransform([1,0,0,1,0,0]); fc.requestRenderAll(); }
+  document.getElementById('zoom-in-'+IDX).addEventListener('click',  ()=>zoomBy(1.25));
+  document.getElementById('zoom-out-'+IDX).addEventListener('click', ()=>zoomBy(0.8));
+  document.getElementById('zoom-fit-'+IDX).addEventListener('click', zoomFit);
+
+  // ── Refined / Draw toggle ─────────────────────────────────────────────────
+  let showingRefined = false;
+  const canvasAreaEl  = document.getElementById('canvas-area-'+IDX);
+  const refinedViewEl = document.getElementById('refined-view-'+IDX);
+  document.getElementById('btn-toggle-'+IDX).addEventListener('click', function(){
+    showingRefined = !showingRefined;
+    if (showingRefined){
+      canvasAreaEl.style.display  = 'none';
+      refinedViewEl.style.display = 'flex';
+      document.getElementById('refined-img-'+IDX).src = currentOverlayB64;
+      this.innerHTML = '<i class="bi bi-pencil-square"></i> Draw';
+      this.classList.add('active');
+    } else {
+      canvasAreaEl.style.display  = 'flex';
+      refinedViewEl.style.display = 'none';
+      this.innerHTML = '<i class="bi bi-layers"></i> Refined';
+      this.classList.remove('active');
+    }
+  });
+
+  // ── Toggle original image ─────────────────────────────────────────────────
+  document.getElementById('btn-orig-'+IDX).addEventListener('click', function(){
+    const panel=document.getElementById('orig-panel-'+IDX);
+    const vis=panel.style.display==='none';
+    panel.style.display = vis?'block':'none';
+    this.classList.toggle('active', vis);
+  });
+
+  // ── Box drawing ───────────────────────────────────────────────────────────
+  let drawingBox=false, boxStartFab=null, boxRect=null;
+  fc.on('mouse:down', function(opt){
+    if (currentMode!=='box'||isPanning) return;
+    const p=fc.getPointer(opt.e);
+    drawingBox=true; boxStartFab={x:p.x,y:p.y};
+    boxRect=new fabric.Rect({left:p.x,top:p.y,width:0,height:0,fill:'rgba(203,166,247,.1)',stroke:'#cba6f7',strokeWidth:1.5,strokeDashArray:[5,3],selectable:false,evented:false});
+    fc.add(boxRect);
+  });
+  fc.on('mouse:move', function(opt){
+    if (!drawingBox||!boxRect) return;
+    const p=fc.getPointer(opt.e);
+    boxRect.set({left:Math.min(p.x,boxStartFab.x),top:Math.min(p.y,boxStartFab.y),width:Math.abs(p.x-boxStartFab.x),height:Math.abs(p.y-boxStartFab.y)});
+    fc.requestRenderAll();
+  });
+
+  // ── Mouse-up: box finish + click prompt ──────────────────────────────────
+  fc.on('mouse:up', function(opt){
+    if (isPanning) return;
+    if (currentMode==='box'&&drawingBox){
+      drawingBox=false;
+      const p=fc.getPointer(opt.e);
+      fc.remove(boxRect); boxRect=null;
+      const x1=Math.min(p.x,boxStartFab.x)/DISP, y1=Math.min(p.y,boxStartFab.y)/DISP;
+      const x2=Math.max(p.x,boxStartFab.x)/DISP, y2=Math.max(p.y,boxStartFab.y)/DISP;
+      if ((x2-x1)>5&&(y2-y1)>5)
+        runSAM({mode:'box',box:[x1,y1,x2,y2],cls:document.getElementById('cls-'+IDX).value});
+      return;
+    }
+    if (currentMode==='click'){
+      if (opt.target&&opt.target.data&&opt.target.data.annId) return;
+      const p=fc.getPointer(opt.e);
+      runSAM({mode:'point',point:[p.x/DISP,p.y/DISP],cls:document.getElementById('cls-'+IDX).value});
+    }
+  });
+
+  // ── SAM prompt ────────────────────────────────────────────────────────────
+  function runSAM(params){
+    const spin=document.getElementById('spin-'+IDX), stat=document.getElementById('status-'+IDX);
+    spin.classList.add('active'); stat.textContent='SAM processing…';
+    fetch('/sam_prompt/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME,class:params.cls,mode:params.mode,box:params.box||null,point:params.point||null}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      if (d.contour&&d.contour.length>=3){
+        // Assign xylIdx for new Xylem annotations
+        const xylIdx = params.cls==='Xylem' ? annotations.filter(a=>a.cls==='Xylem').length : undefined;
+        addAnnotation(d.contour, params.cls, xylIdx);
+        fc.requestRenderAll();
+        stat.textContent='Annotation added. Apply when ready.';
+      } else {
+        stat.textContent='No mask found — try a different area.';
+      }
+    }).catch(()=>{ spin.classList.remove('active'); stat.textContent='SAM request failed.'; });
+  }
+
+  // ── Apply corrections ─────────────────────────────────────────────────────
+  document.getElementById('apply-'+IDX).addEventListener('click', function(){
+    const polygons = [];
+    annotations.forEach(function(ann){
+      if (!ann.visible) return;
+      const pts = polyToImagePts(ann.fabricObj);
+      if (pts.length >= 3) polygons.push({class:ann.cls, points:pts});
+    });
+    const applyBtn=document.getElementById('apply-'+IDX);
+    const spin=document.getElementById('spin-'+IDX);
+    const stat=document.getElementById('status-'+IDX);
+    applyBtn.disabled=true; spin.classList.add('active'); stat.textContent='Reanalyzing…';
+
+    fetch('/reanalyze/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME, polygons}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      applyBtn.disabled=false;
+      stat.textContent='✓ Corrections applied';
+
+      // Update stored overlay + refined view
+      currentOverlayB64 = d.overlay_image;
+      document.getElementById('refined-img-'+IDX).src = currentOverlayB64;
+
+      // Redraw canvas with server-refined contours
+      annotations.slice().forEach(a => fc.remove(a.fabricObj));
+      annotations=[]; uidCounter=0;
+      const mx2 = d.merged_xylem || [];
+      ['Total root','Vascular bundle','Xylem'].forEach(function(cls){
+        (d.contours[cls]||[]).forEach(function(pts, inst){
+          if (pts&&pts.length>=3){
+            const color = (cls==='Xylem' && mx2[inst]) ? mx2[inst].rgb : undefined;
+            addAnnotation(pts, cls, cls==='Xylem'?inst:undefined, color);
+          }
+        });
+      });
+      fc.discardActiveObject(); fc.requestRenderAll(); updateMergeBtn();
+      bindXylemTableClicks();
+
+      // Update metrics panel
+      const mp=document.getElementById('metrics-'+IDX);
+      mp.querySelector('.n-xylem').textContent    = d.n_xylem;
+      mp.querySelector('.vb-area').textContent    = fmtNum(d.metrics.vb_total_area);
+      mp.querySelector('.vb-diam').textContent    = fmtNum(d.metrics.vb_max_diameter);
+      mp.querySelector('.root-area').textContent  = fmtNum(d.metrics.root_total_area);
+      mp.querySelector('.root-diam').textContent  = fmtNum(d.metrics.root_max_diameter);
+
+      // Rebuild xylem table
+      const sec=document.getElementById('xylem-section-'+IDX);
+      const mx=d.merged_xylem||[];
+      if (sec && mx.length){
+        const keys=Object.keys(mx[0]).filter(k=>k!=='instance'&&k!=='rgb');
+        sec.innerHTML=`<h6><i class="bi bi-table me-1"></i>Xylem Details <span style="color:var(--text3);font-weight:400;font-size:.7rem;">(click row to highlight)</span></h6>
+          <div class="table-wrap">${buildXylemTable(mx,keys)}</div>`;
+        bindXylemTableClicks();
+      }
+    }).catch(()=>{ spin.classList.remove('active'); applyBtn.disabled=false; stat.textContent='Request failed.'; });
+  });
+
+  // ── Register polygon getter in global registry (used by batch export) ───────
+  window._cardExport[FILENAME] = function(){
+    const polygons = [];
+    annotations.forEach(function(ann){
+      if (!ann.visible) return;
+      const pts = polyToImagePts(ann.fabricObj);
+      if (pts.length >= 3) polygons.push({cls: ann.cls, points: pts});
+    });
+    return polygons;
+  };
+
+
+} // end initCard
+</script>
 </body>
-
 </html>

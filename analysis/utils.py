@@ -3,7 +3,6 @@ from pathlib import Path
 from .configs import *
 from PIL import Image, ImageDraw
 import numpy as np
-import random
 import cv2
 
 def load_image(img_path):
@@ -21,12 +20,13 @@ def group_boxes_by_class(boxes, labels):
     return cls2bx
 
 def class_color_cycle(cls: str, k: int) -> tuple[int,int,int]:
-    """Color for each mask instance: random for Xylem, fixed cycling for others."""
+    """Color for each mask instance: seeded random for Xylem, fixed cycling for others."""
     if cls == "Xylem":
-        return tuple(random.randint(0, 255) for _ in range(3))
+        rng = np.random.default_rng(k)
+        return tuple(int(v) for v in rng.integers(60, 230, size=3))
     base = {
         "Vascular bundle": np.array([0, 255,   0]),
-        "Total root":       np.array([0,   0, 255]),
+        "Total root":       np.array([230, 120,   0]),
     }[cls]
     factor = 0.85 if k % 2 == 0 else 1.15
     return tuple(int(v) for v in np.clip(base * factor, 0, 255))
@@ -69,17 +69,29 @@ def prompt_points(box, H, W, n_pos=POS_PTS, neg_edge=NEG_EDGE):
 
 def refine_masks(x_masks, vb_masks, root_masks):
     """Subtract overlaps: remove xylem from VB, and both from root."""
-    x_comb = np.any(x_masks, axis=0) if x_masks else np.zeros_like(root_masks[0], bool)
-    vb_ref = [m & ~x_comb for m in vb_masks]
-    vb_comb = np.any(vb_ref, axis=0) if vb_ref else np.zeros_like(root_masks[0], bool)
+    all_masks = x_masks + vb_masks + root_masks
+    if not all_masks:
+        return x_masks, vb_masks, root_masks
+    shape = all_masks[0].shape
+
+    x_comb = np.zeros(shape, bool)
+    for m in x_masks:
+        x_comb |= m
+
+    vb_ref  = [m & ~x_comb for m in vb_masks]
+    vb_comb = np.zeros(shape, bool)
+    for m in vb_ref:
+        vb_comb |= m
+
     root_ref = [m & ~(x_comb | vb_comb) for m in root_masks]
     return x_masks, vb_ref, root_ref
 
-def compute_props(masks):
+def compute_props(masks, return_contours=False):
     """
     For each boolean mask, compute area and approximate max diameter via
     the minimum enclosing circle. Returns list of dicts:
       {'id': idx, 'area': px_count, 'diameter': px_diameter}.
+    If return_contours=True, also includes 'contour': [[x,y], ...].
     """
     props = []
     for idx, m in enumerate(masks):
@@ -89,7 +101,10 @@ def compute_props(masks):
             cv2.CHAIN_APPROX_SIMPLE
         )
         if not cnts:
-            props.append({'id': idx, 'area': 0.0, 'diameter': 0.0})
+            entry = {'id': idx, 'area': 0.0, 'diameter': 0.0}
+            if return_contours:
+                entry['contour'] = []
+            props.append(entry)
             continue
 
         cnt = max(cnts, key=cv2.contourArea)
@@ -97,9 +112,21 @@ def compute_props(masks):
         (_, _), radius = cv2.minEnclosingCircle(cnt)
         diameter = 2.0 * radius
 
-        props.append({
+        entry = {
             'id': idx,
             'area': float(area),
             'diameter': float(diameter)
-        })
+        }
+        if return_contours:
+            entry['contour'] = cnt.reshape(-1, 2).tolist()
+        props.append(entry)
     return props
+
+
+def mask_from_contour(points, H, W):
+    """Create a boolean mask from a list of [x, y] polygon points."""
+    mask = np.zeros((H, W), dtype=np.uint8)
+    if points:
+        pts = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(mask, [pts], 1)
+    return mask.astype(bool)
