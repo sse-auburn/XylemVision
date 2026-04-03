@@ -37,6 +37,9 @@ def analyze_stream_view(request):
         return HttpResponseBadRequest("No images uploaded")
 
     from django.http import StreamingHttpResponse
+    import gc
+    _last_analysis_cache.clear()
+    gc.collect()
 
     def event_stream():
         total = len(images)
