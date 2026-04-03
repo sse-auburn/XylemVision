@@ -79,12 +79,14 @@ def analyze_stream_view(request):
                     'img_width':      original_img.width,
                     'img_height':     original_img.height,
                 }
+                _rgb_buf = BytesIO()
+                Image.fromarray(result['rgb_np']).save(_rgb_buf, format='JPEG', quality=92)
                 _last_analysis_cache[image_file.name] = {
                     **payload,
-                    'rgb_np': result['rgb_np'],
-                    'scale':  result.get('scale', 1.0),
-                    'boxes':  result['boxes'],
-                    'labels': result['labels'],
+                    'rgb_bytes': _rgb_buf.getvalue(),
+                    'scale':     result.get('scale', 1.0),
+                    'boxes':     result['boxes'],
+                    'labels':    result['labels'],
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as e:
@@ -114,7 +116,7 @@ def sam_prompt_view(request):
         return HttpResponseBadRequest("Image not found in cache")
 
     cached = _last_analysis_cache[filename]
-    rgb_np = cached['rgb_np']
+    rgb_np = np.array(Image.open(BytesIO(cached['rgb_bytes'])).convert('RGB'))
     scale  = cached.get('scale', 1.0)
     H, W = rgb_np.shape[:2]
     mode = body.get('mode', 'box')
@@ -175,7 +177,7 @@ def reanalyze_view(request):
         return HttpResponseBadRequest("Image not found in cache")
 
     cached = _last_analysis_cache[filename]
-    rgb_np = cached['rgb_np']
+    rgb_np = np.array(Image.open(BytesIO(cached['rgb_bytes'])).convert('RGB'))
     H, W   = rgb_np.shape[:2]
     scale  = cached.get('scale', 1.0)
     s2     = scale * scale
@@ -297,7 +299,7 @@ def merge_masks_view(request):
         return HttpResponseBadRequest("Image not found in cache")
 
     cached = _last_analysis_cache[filename]
-    rgb_np = cached['rgb_np']
+    rgb_np = np.array(Image.open(BytesIO(cached['rgb_bytes'])).convert('RGB'))
     H, W = rgb_np.shape[:2]
 
     polygons = body.get('polygons', [])  # [{points: [[x,y],...]}]
