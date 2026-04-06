@@ -1,347 +1,1221 @@
+{% load json_filters %}
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Root Structural Analysis</title>
-
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="csrf-token" content="{{ csrf_token }}"/>
+  <title>XylemVision</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
   <style>
-    body {
-      padding-top: 70px;
-      background: #f8f9fa;
+    :root {
+      --bg:      #f0f4f8;
+      --surface: #ffffff;
+      --overlay: #f8fafc;
+      --muted:   #e2e8f0;
+      --subtle:  #cbd5e1;
+      --text:    #0f172a;
+      --text2:   #334155;
+      --text3:   #64748b;
+      --purple:  #2563eb;
+      --blue:    #0284c7;
+      --green:   #0d9488;
+      --peach:   #ea580c;
+      --red:     #be185d;
+      --yellow:  #b45309;
+      --mauve:   #7c3aed;
     }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { padding-top:105px; background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; line-height:1.5; }
 
-    .color-box {
-      width: 40px;
-      height: 20px;
-      border-radius: 4px;
-    }
+    /* ── Navbar ── */
+    .navbar { background:#ffffff !important; border-bottom:1px solid var(--muted); box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .navbar-logo { margin-right: auto; }
+    .navbar-logo svg { height: 95px; width: auto; display: block; }
 
-    .image-pair img {
-      max-width: 100%;
-      height: auto;
-      border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-    }
+    /* ── Upload card ── */
+    .upload-card { background:var(--surface); border:1px solid var(--muted); border-radius:12px; padding:1.25rem 1.5rem; margin-bottom:1.5rem; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+    #dropZone { border:2px dashed var(--subtle); border-radius:8px; padding:1.75rem 2rem; text-align:center; cursor:pointer; color:var(--text2); transition:.2s; }
+    #dropZone:hover, #dropZone.drag-over { border-color:var(--purple); color:var(--purple); background:rgba(37,99,235,.05); }
 
-    .info-box {
-      background: white;
-      border: 1px solid #ddd;
-      border-left: 4px solid #0d6efd;
-      padding: 1rem 1.5rem;
-      margin-bottom: 1rem;
-      border-radius: 6px;
-    }
+    /* ── Result card ── */
+    .result-card { background:var(--surface); border:1px solid var(--muted); border-radius:12px; margin-bottom:2rem; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.07); }
+    .result-header { background:var(--overlay); padding:.65rem 1.25rem; border-bottom:1px solid var(--muted); display:flex; align-items:center; gap:.6rem; }
+    .result-header h5 { margin:0; color:var(--purple); font-size:.9rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%; }
 
-    .label-bg {
-      background-color: #343a40;
-      /* dark gray */
-      color: white;
-      padding: 0.3rem 0.8rem;
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
-      display: inline-block;
-      min-width: 180px;
-      /* adjust width as needed */
-    }
+    /* ── Workspace ── */
+    .workspace { display:flex; height:580px; }
+    .canvas-area { flex:1; display:flex; flex-direction:column; background:#11111b; overflow:hidden; min-width:0; }
 
-    .value-bg {
-      background-color: #e9ecef;
-      /* light gray */
-      color: #212529;
-      padding: 0.3rem 1rem;
-      border-top-right-radius: 6px;
-      border-bottom-right-radius: 6px;
-      display: inline-block;
-      min-width: 120px;
-      /* optional, for alignment */
-    }
+    /* Toolbar — dark (part of canvas workspace) */
+    .ann-toolbar { display:flex; align-items:center; gap:.3rem; padding:.35rem .6rem; background:#1e293b; border-bottom:1px solid #334155; flex-wrap:wrap; min-height:38px; }
+    .ann-toolbar .sep { width:1px; height:20px; background:#334155; margin:0 .15rem; flex-shrink:0; }
+    .tool-btn { background:transparent; border:1px solid #475569; color:#94a3b8; border-radius:6px; padding:.2rem .5rem; font-size:.75rem; cursor:pointer; display:inline-flex; align-items:center; gap:.25rem; transition:.15s; white-space:nowrap; }
+    .tool-btn:hover  { background:#334155; border-color:#64748b; color:#f1f5f9; }
+    .tool-btn.active { background:var(--purple); border-color:var(--purple); color:#fff; }
+    .tool-btn:disabled { opacity:.3; cursor:not-allowed; pointer-events:none; }
+    .tool-btn.merge-ready { border-color:#fbbf24; color:#fbbf24; }
+    .cls-select { background:#334155; border:1px solid #475569; color:#f1f5f9; border-radius:6px; padding:.2rem .4rem; font-size:.75rem; cursor:pointer; }
+    .cls-select:focus { outline:none; border-color:var(--purple); }
+    .hint-bar { padding:.2rem .7rem; font-size:.68rem; color:var(--text3); background:#11111b; min-height:20px; }
 
-    .info-box p {
-      display: flex;
-      margin-bottom: 0.5rem;
-      align-items: center;
-    }
+    /* Canvas wrap */
+    .canvas-wrap { flex:1; overflow:hidden; position:relative; cursor:crosshair; }
+    .canvas-wrap.mode-select { cursor:default; }
+    .canvas-spinner { display:none; position:absolute; inset:0; background:rgba(17,17,27,.7); align-items:center; justify-content:center; z-index:20; }
+    .canvas-spinner.active { display:flex; }
 
-    .label-bg {
-      flex: 0 0 55%;
-      min-width: 180px;
-      text-align: right;
-      margin-right: 0.8rem;
-      border-radius: 6px 0 0 6px;
-      padding: 0.3rem 0.8rem;
-      background-color: #343a40;
-      color: white;
-    }
+    /* Refined overlay view */
+    .refined-view { flex:1; display:none; background:#11111b; overflow:hidden; align-items:center; justify-content:center; }
+    .refined-view img { max-width:100%; max-height:100%; object-fit:contain; }
 
-    .value-bg {
-      flex: 1;
-      padding: 0.3rem 1rem;
-      background-color: #e9ecef;
-      border-radius: 0 6px 6px 0;
-      color: #212529;
-      text-align: left;
+    /* ── Sidebar — dark (part of canvas workspace) ── */
+    .ann-sidebar { width:210px; background:#1e293b; border-left:1px solid #334155; display:flex; flex-direction:column; overflow:hidden; flex-shrink:0; }
+    .sidebar-header { padding:.45rem .7rem; font-size:.7rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.6px; border-bottom:1px solid #334155; }
+    .ann-list { flex:1; overflow-y:auto; padding:.2rem 0; }
+    .ann-list::-webkit-scrollbar { width:3px; }
+    .ann-list::-webkit-scrollbar-thumb { background:#475569; border-radius:4px; }
+    .ann-item { display:flex; align-items:center; gap:.35rem; padding:.28rem .55rem; cursor:pointer; border-radius:4px; margin:.08rem .25rem; font-size:.75rem; color:#94a3b8; transition:.1s; }
+    .ann-item:hover  { background:#334155; }
+    .ann-item.selected { background:#334155; border-left:2px solid var(--purple); padding-left:.35rem; }
+    .ann-dot  { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .ann-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ann-icon-btn { background:none; border:none; padding:.1rem .15rem; color:#475569; cursor:pointer; font-size:.8rem; line-height:1; border-radius:3px; transition:.1s; }
+    .ann-icon-btn:hover { color:#f472b6; background:#334155; }
+    .sidebar-footer { padding:.45rem .55rem; border-top:1px solid #334155; }
+    .apply-btn { width:100%; background:var(--green); border:none; color:#fff; font-weight:700; border-radius:6px; padding:.38rem; font-size:.78rem; cursor:pointer; transition:.15s; }
+    .apply-btn:hover { background:#0f766e; }
+    .apply-btn:disabled { background:#334155; color:#64748b; cursor:not-allowed; }
+    .apply-status { font-size:.68rem; color:var(--text3); text-align:center; margin-top:.3rem; min-height:13px; }
+
+    /* ── Metrics panel ── */
+    .metrics-panel { padding:.9rem 1.25rem; border-top:1px solid var(--muted); }
+    .metrics-title { font-size:.78rem; font-weight:700; color:var(--purple); margin-bottom:.5rem; }
+    .metric-row { display:flex; justify-content:space-between; align-items:center; padding:.28rem 0; border-bottom:1px solid var(--muted); font-size:.8rem; }
+    .metric-row:last-child { border-bottom:none; }
+    .metric-label { color:var(--text3); }
+    .metric-value { font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
+
+    /* ── Xylem table ── */
+    .xylem-section { padding:0 1.25rem .9rem; }
+    .xylem-section h6 { color:var(--purple); font-size:.78rem; font-weight:700; margin-bottom:.4rem; }
+    .table-dark-custom { background:var(--overlay); border-collapse:collapse; width:100%; font-size:.76rem; }
+    .table-dark-custom th { background:var(--muted); color:var(--text2); padding:.35rem .55rem; border:1px solid var(--subtle); font-weight:600; }
+    .table-dark-custom td { color:var(--text2); padding:.3rem .55rem; border:1px solid var(--muted); }
+    .table-wrap { max-height:180px; overflow-y:auto; overflow-x:hidden; border-radius:6px; border:1px solid var(--muted); }
+    .table-wrap::-webkit-scrollbar { width:4px; }
+    .table-wrap::-webkit-scrollbar-thumb { background:var(--subtle); }
+    .xylem-row { cursor:pointer; transition:.12s; }
+    .xylem-row:hover { background:rgba(37,99,235,.07) !important; }
+    .xylem-row.xylem-row-active { background:rgba(37,99,235,.14) !important; outline:1px solid var(--purple); }
+    .color-dot { width:11px; height:11px; border-radius:50%; display:inline-block; vertical-align:middle; }
+
+    /* ── Action row ── */
+    .action-row { padding:.65rem 1.25rem; display:flex; gap:.5rem; flex-wrap:wrap; border-top:1px solid var(--muted); }
+    .btn-dl { background:var(--blue); border:none; color:#fff; font-weight:600; border-radius:6px; padding:.3rem .8rem; font-size:.76rem; cursor:pointer; transition:.15s; }
+    .btn-dl:hover { filter:brightness(1.1); }
+
+    /* Original image panel */
+    .orig-thumb { border-radius:6px; max-width:100%; max-height:140px; object-fit:contain; border:1px solid var(--muted); }
+
+    /* ── Loading overlay ── */
+    #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(17,17,27,.9); z-index:1050; align-items:center; justify-content:center; }
+    .loading-card { background:var(--surface); border:1px solid var(--muted); border-radius:14px; padding:1.75rem 2rem; width:min(460px,92vw); }
+    .loading-card .ld-title { color:var(--purple); font-weight:700; font-size:.95rem; }
+    .loading-card .ld-sub { font-size:.73rem; color:var(--text3); margin-top:.15rem; margin-bottom:1.1rem; }
+    .ld-bar-track { background:var(--muted); border-radius:99px; height:6px; overflow:hidden; margin-bottom:.55rem; }
+    #ld-bar { height:100%; width:0%; background:linear-gradient(90deg,var(--purple),var(--blue)); border-radius:99px; transition:width .5s ease; }
+    .ld-meta { display:flex; justify-content:space-between; font-size:.72rem; color:var(--text3); margin-bottom:.9rem; }
+    .ld-step-box { background:var(--overlay); border-radius:8px; padding:.55rem .9rem; display:flex; align-items:flex-start; gap:.6rem; }
+    .ld-step-icon { font-size:1rem; line-height:1.4; flex-shrink:0; }
+    .ld-filename { font-size:.72rem; color:var(--text3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ld-stepname { font-size:.8rem; color:var(--text); margin-top:.1rem; }
+
+    /* ── Upload spinner (inline) ── */
+    #uploadSpinRow { display:none; align-items:center; gap:.5rem; font-size:.8rem; color:var(--text3); }
+
+    @media(max-width:768px){
+      .workspace { flex-direction:column; height:auto; }
+      .ann-sidebar { width:100%; height:160px; border-left:none; border-top:1px solid #334155; }
     }
   </style>
 </head>
-
 <body>
 
-  <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
-    <div class="container">
-      <a class="navbar-brand fw-bold" href="#">Root Structural Analysis</a>
+<nav class="navbar navbar-expand-lg fixed-top">
+  <div class="container-fluid px-3">
+    <div class="navbar-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 660 200" width="660" height="200">
+  <defs>
+    <clipPath id="logoClip">
+      <circle cx="105" cy="100" r="96"/>
+    </clipPath>
+  </defs>
+
+  <circle cx="105" cy="100" r="102" fill="none" stroke="#1D9E75" stroke-width="1" opacity="0.35"/>
+  <circle cx="105" cy="100" r="99"  fill="none" stroke="#378ADD" stroke-width="0.5" stroke-dasharray="3 6" opacity="0.3"/>
+
+  <image href="data:image/jpeg;base64,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"
+    x="9" y="4" width="192" height="192"
+    clip-path="url(#logoClip)"
+    preserveAspectRatio="xMidYMid slice"/>
+
+  <circle cx="105" cy="100" r="96" fill="none" stroke="#5DCAA5" stroke-width="1" opacity="0.5"/>
+
+  <line x1="222" y1="12" x2="222" y2="188" stroke="#1D9E75" stroke-width="0.8" opacity="0.3"/>
+
+  <text x="238" y="92"
+    font-family="'Cormorant Garamond', Georgia, serif"
+    font-weight="700"
+    font-size="82"
+    letter-spacing="-2"
+    fill="#0d2840">Xylem</text>
+
+  <text x="238" y="180"
+    font-family="'Cormorant Garamond', Georgia, serif"
+    font-weight="700"
+    font-size="82"
+    letter-spacing="-2"
+    fill="#1D9E75">Vision</text>
+
+</svg>
     </div>
-  </nav>
+  </div>
+</nav>
 
-  <div class="container">
-    <form method="POST" enctype="multipart/form-data" class="mb-4" id="uploadForm">
+<div class="container-fluid px-3 py-2">
+
+  <!-- ── Upload section ── -->
+  <div class="upload-card">
+    <form id="uploadForm">
       {% csrf_token %}
-      <div id="dropZone" class="border border-primary rounded p-4 text-center mb-3"
-        style="cursor: pointer; background-color: #f8f9fa;">
-        <p class="mb-1">Drag and drop images here or click to select files</p>
-        <input type="file" id="imageUpload" name="image" accept="image/*" multiple required style="display: none;" />
-        <div id="fileList" class="mt-2"></div>
+      <div id="dropZone">
+        <i class="bi bi-cloud-upload fs-3 d-block mb-1"></i>
+        <div style="font-size:.88rem;">Drag &amp; drop images here or click to select</div>
+        <input type="file" id="imageUpload" name="image" accept="image/*" multiple required style="display:none"/>
+        <div id="fileList" class="mt-2" style="font-size:.75rem;"></div>
       </div>
-      <button type="submit" class="btn btn-primary">Analyze</button>
+      <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
+        <button type="submit" class="btn btn-sm" style="background:var(--purple);color:#fff;font-weight:700;">
+          <i class="bi bi-play-fill me-1"></i>Analyze
+        </button>
+        <div id="uploadSpinRow">
+          <div class="spinner-border spinner-border-sm" style="color:var(--purple);"></div>
+          <span id="uploadSpinMsg">Processing…</span>
+        </div>
+      </div>
     </form>
-    {% if results %}
-    <form method="POST" action="{% url 'download_all_xlsx' %}" target="_blank" class="mb-4">
-      {% csrf_token %}
-      <!-- Send filenames to identify which to include -->
-      {% for res in results %}
-      <input type="hidden" name="filenames" value="{{ res.file }}" />
-      {% endfor %}
-      <button type="submit" class="btn btn-primary">Download All XLSX</button>
-    </form>
-    {% endif %}
+    <!-- Download-all bar (shown after first result) -->
+    <div id="download-all-bar" class="mt-2 d-flex gap-2 flex-wrap" style="display:none !important;"></div>
+  </div>
+
+  <!-- ── Results ── -->
+  <div id="results-container"></div>
+
+</div><!-- container -->
+
+<!-- ── Loading overlay ── -->
+<div id="loadingOverlay">
+  <div class="loading-card">
+    <div class="d-flex align-items-center gap-2">
+      <div class="spinner-border spinner-border-sm" style="color:var(--purple);flex-shrink:0;"></div>
+      <span class="ld-title" id="ld-title">Processing <span id="ld-total">?</span> image(s)</span>
+    </div>
+    <div class="ld-sub" id="ld-sub">Uploading &rarr; Preparing &rarr; YOLO detection &rarr; SAM segmentation &rarr; Metrics</div>
+    <div class="ld-bar-track"><div id="ld-bar"></div></div>
+    <div class="ld-meta">
+      <span id="ld-pct">0%</span>
+      <span id="ld-img-lbl">—</span>
+    </div>
+    <div class="ld-step-box">
+      <span class="ld-step-icon" id="ld-icon">⏳</span>
+      <div style="min-width:0;">
+        <div class="ld-filename" id="ld-filename">—</div>
+        <div class="ld-stepname" id="ld-step">Initializing…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ─── Global ──────────────────────────────────────────────────────────────────
+const CSRF        = document.querySelector('meta[name="csrf-token"]').content;
+let   allFilenames = [];
+let   cardCount    = 0;
+
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtNum(v,d=2){ return (v||0).toFixed(d); }
+
+// ─── Drag-drop file input ─────────────────────────────────────────────────────
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('imageUpload');
+const fileList   = document.getElementById('fileList');
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => showFiles(e.target.files));
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length){ fileInput.files = e.dataTransfer.files; showFiles(e.dataTransfer.files); }
+});
+function showFiles(files){
+  fileList.innerHTML = Array.from(files).map(f=>`<span class="badge bg-secondary me-1">${escHtml(f.name)}</span>`).join('');
+}
 
 
-    {% if results %}
-    <div class="row g-4">
-      {% for result in results %}
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">{{ result.file }}</h5>
+// ─── Loading bar ─────────────────────────────────────────────────────────────
+const STAGES = [
+  ['YOLO detection',              '🔍', 3000],
+  ['SAM: segmenting xylem',       '🔬', 9000],
+  ['SAM: segmenting vascular bundle', '🌿', 5000],
+  ['SAM: segmenting total root',  '🌱', 5000],
+  ['Computing metrics & overlay', '📊', 2000],
+];
+let _ldTimer = null, _ldTotal = 1, _ldDone = 0, _ldStage = 0;
+
+function formatBytes(b){
+  if (b >= 1073741824) return (b/1073741824).toFixed(1)+' GB';
+  if (b >= 1048576)    return (b/1048576).toFixed(1)+' MB';
+  if (b >= 1024)       return (b/1024).toFixed(1)+' KB';
+  return b+' B';
+}
+function showLoading(n, files){
+  _ldTotal = n; _ldDone = 0; _ldStage = 0;
+  const totalSize = files ? Array.from(files).reduce((s,f)=>s+f.size,0) : 0;
+  document.getElementById('ld-total').textContent = n;
+  document.getElementById('ld-title').innerHTML = `Uploading <span id="ld-total">${n}</span> image(s)`;
+  document.getElementById('ld-sub').textContent = totalSize ? `Total size: ${formatBytes(totalSize)}` : 'Uploading…';
+  document.getElementById('ld-img-lbl').textContent = '—';
+  document.getElementById('ld-filename').textContent = '—';
+  document.getElementById('ld-icon').textContent = '📤';
+  document.getElementById('ld-step').textContent = 'Sending images to server…';
+  document.getElementById('ld-pct').textContent = '0%';
+  document.getElementById('ld-bar').style.width = '0%';
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  document.getElementById('uploadSpinRow').style.display = 'flex';
+}
+function hideLoading(){
+  document.getElementById('loadingOverlay').style.display = 'none';
+  document.getElementById('uploadSpinRow').style.display = 'none';
+  if (_ldTimer){ clearTimeout(_ldTimer); _ldTimer = null; }
+}
+function updateLoadingFile(filename, idx, total){
+  if (_ldTimer){ clearTimeout(_ldTimer); _ldTimer = null; }
+  _ldDone = idx; _ldStage = 0;
+  document.getElementById('ld-img-lbl').textContent = `Image ${idx+1} of ${total}`;
+  document.getElementById('ld-filename').textContent = filename;
+  _animateStage();
+}
+function _animateStage(){
+  if (_ldStage >= STAGES.length) return;
+  const [label, icon, dur] = STAGES[_ldStage];
+  document.getElementById('ld-icon').textContent  = icon;
+  document.getElementById('ld-step').textContent  = label;
+  const done = _ldDone * STAGES.length + _ldStage;
+  const pct  = Math.min(96, Math.round(done / (_ldTotal * STAGES.length) * 100));
+  document.getElementById('ld-bar').style.width   = pct + '%';
+  document.getElementById('ld-pct').textContent   = pct + '%';
+  _ldStage++;
+  _ldTimer = setTimeout(_animateStage, dur);
+}
+
+// ─── Global polygon registry (filename → getter) ─────────────────────────────
+window._cardExport = {};
+
+// ─── Download-all bar ────────────────────────────────────────────────────────
+function updateDownloadAll(){
+  const bar = document.getElementById('download-all-bar');
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <button onclick="dlAllXlsx()" class="btn btn-sm" style="background:var(--blue);color:#fff;font-weight:700;">
+      <i class="bi bi-file-earmark-excel me-1"></i>Download All XLSX
+    </button>
+    <button id="btn-export-training-all" onclick="dlTrainingBatch()" class="btn btn-sm" style="background:var(--purple);color:#fff;font-weight:700;" disabled>
+      <i class="bi bi-archive me-1"></i>Download Training Images <span id="training-count-badge">(0 selected)</span>
+    </button>
+    <button onclick="dlAllOverlays()" class="btn btn-sm" style="background:var(--green);color:#fff;font-weight:700;">
+      <i class="bi bi-images me-1"></i>Download All Overlays
+    </button>`;
+}
+
+function updateTrainingBtn(){
+  const n   = document.querySelectorAll('.train-check:checked').length;
+  const btn = document.getElementById('btn-export-training-all');
+  const badge = document.getElementById('training-count-badge');
+  if (!btn) return;
+  btn.disabled = n === 0;
+  if (badge) badge.textContent = '(' + n + ' selected)';
+}
+
+function dlTrainingBatch(){
+  const checked = Array.from(document.querySelectorAll('.train-check:checked'));
+  if (!checked.length) return;
+  const images = [];
+  checked.forEach(function(cb){
+    const filename = cb.dataset.file;
+    const getter   = window._cardExport[filename];
+    if (!getter) return;
+    const polygons = getter();
+    if (polygons.length) images.push({filename: filename, polygons: polygons});
+  });
+  if (!images.length){ alert('No visible annotations found in selected images.'); return; }
+  const btn = document.getElementById('btn-export-training-all');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Exporting…';
+  fetch('/export_training_batch/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+    body: JSON.stringify({images: images}),
+  }).then(function(r){
+    if (!r.ok) throw new Error('Export failed');
+    return r.blob();
+  }).then(function(blob){
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href    = url;
+    a.download = 'training_data.zip';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    btn.innerHTML = '<i class="bi bi-archive me-1"></i>Download Training Images <span id="training-count-badge"></span>';
+    updateTrainingBtn();
+  }).catch(function(){
+    btn.innerHTML = '<i class="bi bi-archive me-1"></i>Download Training Images <span id="training-count-badge"></span>';
+    updateTrainingBtn();
+    alert('Export failed. Please try again.');
+  });
+}
+
+function _postForm(action, nameValuePairs){
+  const f = document.createElement('form');
+  f.method='POST'; f.action=action; f.target='_blank';
+  f.innerHTML = `<input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}">`;
+  nameValuePairs.forEach(([n,v]) => { f.innerHTML += `<input type="hidden" name="${n}" value="${escHtml(v)}"`+'>'; });
+  document.body.appendChild(f); f.submit(); document.body.removeChild(f);
+}
+function dlAllXlsx()    { _postForm('/download_all_xlsx/',  allFilenames.map(f=>['filenames',f])); }
+function dlAllOverlays(){ _postForm('/download_overlays/',  allFilenames.map(f=>['filenames',f])); }
+
+// ─── SSE form submission ──────────────────────────────────────────────────────
+document.getElementById('uploadForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const files = fileInput.files;
+  if (!files.length) return;
+
+  allFilenames = [];
+  cardCount    = 0;
+  document.getElementById('results-container').innerHTML = '';
+  document.getElementById('download-all-bar').style.display = 'none';
+  showLoading(files.length, files);
+
+  const fd = new FormData(this);
+  const xhr = new XMLHttpRequest();
+  let   _xhrProcessed = 0;
+  let   _xhrBuffer    = '';
+
+  xhr.upload.addEventListener('progress', function(e){
+    if (!e.lengthComputable) return;
+    const pct = Math.round(e.loaded / e.total * 100);
+    document.getElementById('ld-bar').style.width = pct + '%';
+    document.getElementById('ld-pct').textContent = pct + '%';
+    document.getElementById('ld-step').textContent =
+      `Uploading… ${formatBytes(e.loaded)} of ${formatBytes(e.total)}`;
+  });
+
+  xhr.upload.addEventListener('load', function(){
+    document.getElementById('ld-bar').style.width = '100%';
+    document.getElementById('ld-pct').textContent = '100%';
+    document.getElementById('ld-icon').textContent = '⚙️';
+    document.getElementById('ld-title').innerHTML =
+      `Preparing <span id="ld-total">${files.length}</span> image(s) for analysis`;
+    document.getElementById('ld-sub').textContent = 'Upload complete — server is loading images…';
+    document.getElementById('ld-step').textContent = 'Server is preparing images for analysis…';
+    document.getElementById('ld-filename').textContent = '—';
+    document.getElementById('ld-img-lbl').textContent = '—';
+  });
+
+  xhr.addEventListener('progress', function(){
+    const newData = xhr.responseText.slice(_xhrProcessed);
+    _xhrProcessed = xhr.responseText.length;
+    _xhrBuffer += newData;
+    const parts = _xhrBuffer.split('\n\n');
+    _xhrBuffer = parts.pop();
+    for (const part of parts){
+      if (!part.startsWith('data: ')) continue;
+      let ev;
+      try { ev = JSON.parse(part.slice(6)); } catch(e){ continue; }
+      if (ev.type === 'start'){
+        document.getElementById('ld-title').innerHTML =
+          `Analysing <span id="ld-total">${ev.total}</span> image(s)`;
+        document.getElementById('ld-sub').textContent =
+          'YOLO detection → SAM segmentation → Metrics';
+        updateLoadingFile(ev.file, ev.index, ev.total);
+      } else if (ev.type === 'result'){
+        appendResultCard(ev, ++cardCount);
+        allFilenames.push(ev.file);
+        updateDownloadAll();
+      } else if (ev.type === 'error'){
+        appendErrorCard(ev.file, ev.message, ++cardCount);
+      } else if (ev.type === 'done'){
+        hideLoading();
+      }
+    }
+  });
+
+  xhr.addEventListener('load',  ()=>hideLoading());
+  xhr.addEventListener('error', ()=>hideLoading());
+
+  xhr.open('POST', '/analyze_stream/');
+  xhr.send(fd);
+});
+
+// ─── Error card ───────────────────────────────────────────────────────────────
+function appendErrorCard(filename, msg, idx){
+  document.getElementById('results-container').insertAdjacentHTML('beforeend',`
+    <div class="result-card" id="card-${idx}">
+      <div class="result-header">
+        <i class="bi bi-exclamation-triangle" style="color:var(--red);"></i>
+        <h5>${escHtml(filename)}</h5>
+      </div>
+      <div style="padding:1rem 1.25rem;color:var(--red);font-size:.82rem;">Error: ${escHtml(msg)}</div>
+    </div>`);
+}
+
+// ─── Card HTML builder ────────────────────────────────────────────────────────
+function buildCardHTML(data, idx){
+  // Metrics
+  const m = data.metrics || {};
+  const metricsHTML = `
+    <div class="metric-row"><span class="metric-label">Xylem Count</span><span class="metric-value n-xylem">${data.n_xylem||0}</span></div>
+    <div class="metric-row"><span class="metric-label">VB Total Area (px²)</span><span class="metric-value vb-area">${fmtNum(m.vb_total_area)}</span></div>
+    <div class="metric-row"><span class="metric-label">VB Max Diameter (px)</span><span class="metric-value vb-diam">${fmtNum(m.vb_max_diameter)}</span></div>
+    <div class="metric-row"><span class="metric-label">Root Total Area (px²)</span><span class="metric-value root-area">${fmtNum(m.root_total_area)}</span></div>
+    <div class="metric-row"><span class="metric-label">Root Max Diameter (px)</span><span class="metric-value root-diam">${fmtNum(m.root_max_diameter)}</span></div>`;
+
+  // Xylem table
+  let xylemHTML = '';
+  const mx = data.merged_xylem || [];
+  if (mx.length){
+    const keys = Object.keys(mx[0]).filter(k => k!=='instance' && k!=='rgb');
+    xylemHTML = `
+    <div class="xylem-section" id="xylem-section-${idx}">
+      <h6><i class="bi bi-table me-1"></i>Xylem Details <span style="color:var(--text3);font-weight:400;font-size:.7rem;">(click row to highlight on canvas)</span></h6>
+      <div class="table-wrap">${buildXylemTable(mx, keys)}</div>
+    </div>`;
+  }
+
+  return `
+  <div class="result-card" id="card-${idx}">
+    <div class="result-header">
+      <i class="bi bi-image" style="color:var(--purple);"></i>
+      <h5 title="${escHtml(data.file)}">${escHtml(data.file)}</h5>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:.4rem;">
+        <span style="font-size:.72rem;color:var(--text3);">
+          <span style="color:var(--blue);">■</span> ${data.n_xylem||0}x
+          <span style="color:var(--green);margin-left:.3rem;">■</span> ${data.n_vb||0}VB
+          <span style="color:var(--peach);margin-left:.3rem;">■</span> ${data.n_root||0}R
+        </span>
+        <label class="train-label" title="Mark for training export" style="display:flex;align-items:center;gap:.3rem;cursor:pointer;margin-left:.5rem;font-size:.75rem;color:var(--mauve);user-select:none;">
+          <input type="checkbox" class="train-check" data-file="${escHtml(data.file)}" onchange="updateTrainingBtn()" style="accent-color:var(--mauve);width:14px;height:14px;cursor:pointer;">
+          Training
+        </label>
+        <button class="tool-btn" id="btn-orig-${idx}" title="Show original image" style="margin-left:.5rem;"><i class="bi bi-eye"></i> Original</button>
+        <button class="tool-btn" id="btn-toggle-${idx}" title="Toggle refined overlay view (R)" style="margin-left:.2rem;"><i class="bi bi-layers"></i> Refined</button>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <!-- Canvas area -->
+      <div class="canvas-area" id="canvas-area-${idx}">
+        <div class="ann-toolbar">
+          <select class="cls-select" id="cls-${idx}">
+            <option value="Xylem">⬤ Xylem</option>
+            <option value="Vascular bundle">⬤ Vascular bundle</option>
+            <option value="Total root">⬤ Total root</option>
+          </select>
+          <div class="sep"></div>
+          <button class="tool-btn active" data-mode="select" id="btn-select-${idx}" title="Select/edit polygons (S)"><i class="bi bi-cursor"></i> Select</button>
+          <button class="tool-btn" data-mode="box"    id="btn-box-${idx}"    title="Box+SAM (B)"><i class="bi bi-bounding-box"></i> Box+SAM</button>
+          <button class="tool-btn" data-mode="click"  id="btn-click-${idx}"  title="Click+SAM (C)"><i class="bi bi-cursor-fill"></i> Click+SAM</button>
+          <div class="sep"></div>
+          <button class="tool-btn" id="btn-merge-${idx}" title="Merge selected polygons (M)" disabled><i class="bi bi-union"></i> Merge</button>
+          <div class="sep"></div>
+          <button class="tool-btn" id="btn-undo-${idx}" title="Undo (Ctrl+Z)" disabled><i class="bi bi-arrow-counterclockwise"></i></button>
+          <button class="tool-btn" id="btn-redo-${idx}" title="Redo (Ctrl+Y)" disabled><i class="bi bi-arrow-clockwise"></i></button>
+          <div class="sep"></div>
+          <button class="tool-btn" id="zoom-in-${idx}"  title="Zoom in (+)"><i class="bi bi-zoom-in"></i></button>
+          <button class="tool-btn" id="zoom-out-${idx}" title="Zoom out (-)"><i class="bi bi-zoom-out"></i></button>
+          <button class="tool-btn" id="zoom-fit-${idx}" title="Fit view (F)"><i class="bi bi-fullscreen"></i></button>
+        </div>
+        <div class="hint-bar" id="hint-${idx}">Select — click polygon to select &nbsp;|&nbsp; double-click to edit vertices &nbsp;|&nbsp; scroll=zoom &nbsp;|&nbsp; Alt+drag=pan</div>
+        <div class="canvas-wrap" id="wrap-${idx}">
+          <canvas id="fab-${idx}"></canvas>
+          <div class="canvas-spinner" id="spin-${idx}">
+            <div class="spinner-border" style="color:var(--purple);width:2.5rem;height:2.5rem;"></div>
           </div>
-          <div class="card-body">
-            <div class="image-pair d-flex gap-3 mb-4 justify-content-center">
-              <div class="text-center">
-                <h6>Original</h6>
-                <img src="{{ result.original_image }}" alt="Original Image" />
-              </div>
-              <div class="text-center">
-                <h6>Overlay</h6>
-                <img src="{{ result.overlay_image }}" alt="Overlay Image" />
-              </div>
-            </div>
-
-
-
-            <div class="info-box">
-              <h6 class="text-primary">Summary</h6>
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <p>
-                    <span class="label-bg"><strong>Xylem Count:</strong></span>
-                    <span class="value-bg">{{ result.n_xylem }}</span>
-                  </p>
-                  <p>
-                    <span class="label-bg"><strong>Vascular Bundle Total Area:</strong></span>
-                    <span class="value-bg">{{ result.metrics.vb_total_area }}</span>
-                  </p>
-                  <p>
-                    <span class="label-bg"><strong>Vascular Bundle Max Diameter:</strong></span>
-                    <span class="value-bg">{{ result.metrics.vb_max_diameter }}</span>
-                  </p>
-                </div>
-                <div class="col-md-6">
-                  <p>
-                    <span class="label-bg"><strong>Root Total Area:</strong></span>
-                    <span class="value-bg">{{ result.metrics.root_total_area }}</span>
-                  </p>
-                  <p>
-                    <span class="label-bg"><strong>Root Max Diameter:</strong></span>
-                    <span class="value-bg">{{ result.metrics.root_max_diameter }}</span>
-                  </p>
-                </div>
-              </div>
-              <div class="d-flex justify-content-end gap-2 mb-3">
-                <form method="POST" action="{% url 'download_xlsx' %}" target="_blank" style="display:inline;">
-                  {% csrf_token %}
-                  <input type="hidden" name="filename" value="{{ result.file }}" />
-                  <button type="submit" class="btn btn-success btn-sm">Download XLSX</button>
-                </form>
-              </div>
-            </div>
-
-
-            {% if result.merged_xylem %}
-            <h6>Xylem Details + Overlay Colors</h6>
-            <div class="table-responsive mb-4" style="max-height: 250px; overflow-y: auto;">
-              <table class="table table-sm table-bordered table-hover">
-                <thead class="table-light sticky-top">
-                  <tr>
-                    {% for key in result.merged_xylem.0.keys %}
-                    {% if key != 'instance' and key != 'rgb' %}
-                    <th>{{ key|capfirst }}</th>
-                    {% endif %}
-                    {% endfor %}
-                    <th>Color</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in result.merged_xylem %}
-                  <tr>
-                    {% for key, val in row.items %}
-                    {% if key != 'instance' and key != 'rgb' %}
-                    <td>{{ val }}</td>
-                    {% endif %}
-                    {% endfor %}
-                    <td>
-                      <div class="color-box"
-                        style="background-color: rgb({{ row.rgb.0 }}, {{ row.rgb.1 }}, {{ row.rgb.2 }});"></div>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            {% endif %}
-
-            {% if result.extra_metrics %}
-            <h6>Unmatched Xylem Metrics</h6>
-            <div class="table-responsive mb-3">
-              <table class="table table-sm table-bordered">
-                <thead class="table-light">
-                  <tr>
-                    {% for key in result.extra_metrics.0.keys %}
-                    {% if key != 'instance' %}
-                    <th>{{ key|capfirst }}</th>
-                    {% endif %}
-                    {% endfor %}
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in result.extra_metrics %}
-                  <tr>
-                    {% for key, val in row.items %}
-                    {% if key != 'instance' %}
-                    <td>{{ val }}</td>
-                    {% endif %}
-                    {% endfor %}
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            {% endif %}
-
-            {% if result.extra_colours %}
-            <h6>Unmatched Overlay Colors</h6>
-            <table class="table table-sm table-bordered mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Color</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for color in result.extra_colours %}
-                <tr>
-                  <td>
-                    <div class="color-box"
-                      style="background-color: rgb({{ color.rgb.0 }}, {{ color.rgb.1 }}, {{ color.rgb.2 }});"></div>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% endif %}
+          <div id="lazy-ph-${idx}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#11111b;color:var(--subtle);font-size:.78rem;gap:.4rem;">
+            <div class="spinner-border spinner-border-sm" style="color:var(--subtle);"></div> Scroll to load…
           </div>
         </div>
       </div>
-      {% endfor %}
+      <!-- Refined overlay view (hidden by default) -->
+      <div class="refined-view" id="refined-view-${idx}">
+        <img id="refined-img-${idx}" src="${data.overlay_image}" style="max-width:100%;max-height:100%;object-fit:contain;"/>
+      </div>
+      <!-- Sidebar -->
+      <div class="ann-sidebar">
+        <div class="sidebar-header"><i class="bi bi-layers me-1"></i>Annotations</div>
+        <div class="ann-list" id="ann-list-${idx}"></div>
+        <div class="sidebar-footer">
+          <button class="apply-btn" id="apply-${idx}"><i class="bi bi-check2-circle me-1"></i>Apply Corrections</button>
+          <div class="apply-status" id="status-${idx}"></div>
+        </div>
+      </div>
     </div>
-    {% endif %}
-  </div>
 
-  <!-- Loading Overlay -->
-  <div id="loadingOverlay" style="
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.8);
-    z-index: 1050;
-    align-items: center;
-    justify-content: center;
-  ">
-    <div class="spinner-border text-primary" role="status" style="width: 4rem; height: 4rem">
-      <span class="visually-hidden">Loading...</span>
+    <!-- Original image panel (hidden) -->
+    <div id="orig-panel-${idx}" style="display:none;padding:.65rem 1.25rem;border-top:1px solid var(--muted);">
+      <div style="font-size:.72rem;color:var(--text3);margin-bottom:.35rem;">Original image</div>
+      <img src="${data.original_image}" class="orig-thumb" alt="original"/>
     </div>
-  </div>
 
-  <!-- Bootstrap JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    const form = document.querySelector("form");
-    const loadingOverlay = document.getElementById("loadingOverlay");
-    form.addEventListener("submit", () => {
-      loadingOverlay.style.display = "flex";
-    });
+    <!-- Metrics -->
+    <div class="metrics-panel" id="metrics-${idx}">
+      <div class="metrics-title"><i class="bi bi-bar-chart-line me-1"></i>Summary Metrics</div>
+      ${metricsHTML}
+    </div>
 
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('imageUpload');
-    const fileList = document.getElementById('fileList');
+    ${xylemHTML}
 
-    // Clicking drop zone triggers file input click
-    dropZone.addEventListener('click', () => {
-      fileInput.click();
-    });
+    <!-- Actions -->
+    <div class="action-row">
+      <button class="btn-dl" onclick="_dlSingle('${escHtml(data.file)}')">
+        <i class="bi bi-file-earmark-excel me-1"></i>Download XLSX
+      </button>
+    </div>
+  </div>`;
+}
 
-    // Show selected files names
-    function updateFileList(files) {
-      if (files.length === 0) {
-        fileList.innerHTML = '';
-        return;
+function buildXylemTable(mx, keys){
+  let h = `<table class="table-dark-custom"><thead><tr>`;
+  keys.forEach(k => { h += `<th>${escHtml(k.charAt(0).toUpperCase()+k.slice(1))}</th>`; });
+  h += `<th>Color</th></tr></thead><tbody>`;
+  mx.forEach((row, i) => {
+    h += `<tr class="xylem-row" data-xylem-idx="${row.id !== undefined ? row.id : i+1}">`;
+    keys.forEach(k => {
+      let cell = '';
+      if (row[k] !== undefined){
+        if (typeof row[k] === 'number'){
+          cell = (k === 'id' || Number.isInteger(row[k])) ? String(Math.round(row[k])) : fmtNum(row[k]);
+        } else {
+          cell = escHtml(String(row[k]));
+        }
       }
-      const listItems = Array.from(files).map(file => `<div>${file.name}</div>`).join('');
-      fileList.innerHTML = listItems;
+      h += `<td>${cell}</td>`;
+    });
+    const rgb = row.rgb||[180,180,180];
+    h += `<td><span class="color-dot" style="background:rgb(${rgb[0]},${rgb[1]},${rgb[2]});"></span></td></tr>`;
+  });
+  h += '</tbody></table>';
+  return h;
+}
+
+function _dlSingle(filename){
+  _postForm('/download_xlsx/', [['filename', filename]]);
+}
+
+// ─── Append card + lazy-init ───────────────────────────────────────────────────
+function appendResultCard(data, idx){
+  const html = buildCardHTML(data, idx);
+  document.getElementById('results-container').insertAdjacentHTML('beforeend', html);
+
+  const card = document.getElementById('card-'+idx);
+  let initialized = false;
+  const obs = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting && !initialized){
+      initialized = true; obs.disconnect();
+      initCard(data, idx);
+    }
+  }, {threshold:0.05});
+  obs.observe(card);
+}
+
+// ─── Per-card initialisation ──────────────────────────────────────────────────
+function initCard(data, IDX){
+  const FILENAME = data.file;
+  const ORIG_B64 = data.original_image;
+  const CONTOURS = data.contours || {};
+  const IMG_W    = data.img_width;
+  const IMG_H    = data.img_height;
+
+  const CLS_FILL   = {'Xylem':'rgba(243,139,168,.32)','Vascular bundle':'rgba(166,227,161,.28)','Total root':'rgba(250,179,135,.28)'};
+  const CLS_STROKE = {'Xylem':'#f38ba8','Vascular bundle':'#a6e3a1','Total root':'#fab387'};
+  const CLS_HEX    = {'Xylem':'#f38ba8','Vascular bundle':'#a6e3a1','Total root':'#fab387'};
+  const HINTS = {
+    select: 'Select — click polygon &nbsp;|&nbsp; double-click to edit vertices &nbsp;|&nbsp; scroll=zoom &nbsp;|&nbsp; Alt+drag=pan',
+    box:    'Box+SAM — drag a rectangle; SAM traces the boundary',
+    click:  'Click+SAM — click inside any structure; SAM auto-segments it',
+  };
+
+  // Canvas setup
+  const wrap   = document.getElementById('wrap-'+IDX);
+  const canvEl = document.getElementById('fab-'+IDX);
+  const MAX_W  = wrap.clientWidth  || 800;
+  const MAX_H  = wrap.clientHeight || 500;
+  const scaleX = MAX_W / IMG_W;
+  const scaleY = MAX_H / IMG_H;
+  const DISP   = Math.min(scaleX, scaleY, 1);
+  const CW     = Math.round(IMG_W * DISP);
+  const CH     = Math.round(IMG_H * DISP);
+  canvEl.width = CW; canvEl.height = CH;
+  const fc = new fabric.Canvas('fab-'+IDX, {width:CW, height:CH, selection:true});
+
+  // Annotation state
+  let annotations = [];
+  let uidCounter  = 0;
+  let currentOverlayB64 = data.overlay_image;
+
+  // ── Undo / Redo history ───────────────────────────────────────────────────
+  let _history = [];
+  let _histIdx = -1;
+  let _histPaused = false;
+
+  function _getSnap(){
+    return annotations.map(function(ann){
+      return {
+        cls:    ann.cls,
+        xylIdx: ann.fabricObj.data.xylIdx,
+        color:  ann.fabricObj.data.color || null,
+        visible:ann.visible,
+        points: polyToImagePts(ann.fabricObj),
+      };
+    });
+  }
+  function _pushSnap(){
+    if (_histPaused) return;
+    _history = _history.slice(0, _histIdx + 1);
+    _history.push(_getSnap());
+    if (_history.length > 40) _history.shift();
+    _histIdx = _history.length - 1;
+    _updateHistBtns();
+  }
+  function _applySnap(snap){
+    _histPaused = true;
+    annotations.slice().forEach(a => fc.remove(a.fabricObj));
+    annotations = []; uidCounter = 0;
+    snap.forEach(function(s){
+      addAnnotation(s.points, s.cls, s.xylIdx !== null ? s.xylIdx : undefined, s.color || undefined);
+      if (!s.visible){
+        const ann = annotations[annotations.length - 1];
+        ann.visible = false; ann.fabricObj.set('visible', false);
+      }
+    });
+    _histPaused = false;
+    fc.discardActiveObject(); fc.requestRenderAll(); renderSidebar();
+  }
+  function _updateHistBtns(){
+    const bu = document.getElementById('btn-undo-'+IDX);
+    const br = document.getElementById('btn-redo-'+IDX);
+    if (bu) bu.disabled = _histIdx <= 0;
+    if (br) br.disabled = _histIdx >= _history.length - 1;
+  }
+  function doUndo(){
+    if (_histIdx <= 0) return;
+    _histIdx--;
+    _applySnap(_history[_histIdx]);
+    _updateHistBtns();
+  }
+  function doRedo(){
+    if (_histIdx >= _history.length - 1) return;
+    _histIdx++;
+    _applySnap(_history[_histIdx]);
+    _updateHistBtns();
+  }
+  document.getElementById('btn-undo-'+IDX).addEventListener('click', doUndo);
+  document.getElementById('btn-redo-'+IDX).addEventListener('click', doRedo);
+
+  // ── Polygon → image-space helper ──────────────────────────────────────────
+  // calcTransformMatrix() gives canvas-space (before viewport) — just divide by DISP
+  function polyToImagePts(obj){
+    const matrix = obj.calcTransformMatrix();
+    return obj.points.map(function(p){
+      const local = {x: p.x - obj.pathOffset.x, y: p.y - obj.pathOffset.y};
+      const abs   = fabric.util.transformPoint(local, matrix);
+      return [Math.round(abs.x / DISP), Math.round(abs.y / DISP)];
+    });
+  }
+
+  // ── Load background image ──────────────────────────────────────────────────
+  fabric.Image.fromURL(ORIG_B64, function(img){
+    img.set({left:0,top:0,scaleX:CW/img.width,scaleY:CH/img.height,selectable:false,evented:false,hoverCursor:'default'});
+    img.data = {isBackground:true};
+    fc.add(img); fc.sendToBack(img);
+    drawInitialContours();
+    fc.renderAll();
+    _pushSnap(); // save initial predicted state so user can undo back to it
+    const ph = document.getElementById('lazy-ph-'+IDX);
+    if (ph) ph.style.display = 'none';
+  });
+
+  // ── Draw initial predicted contours ───────────────────────────────────────
+  function drawInitialContours(){
+    const mergedXylem = data.merged_xylem || [];
+    ['Total root','Vascular bundle','Xylem'].forEach(function(cls){
+      (CONTOURS[cls]||[]).forEach(function(pts, inst){
+        if (pts && pts.length >= 3){
+          const color = (cls==='Xylem' && mergedXylem[inst]) ? mergedXylem[inst].rgb : undefined;
+          addAnnotation(pts, cls, cls==='Xylem' ? inst + 1 : undefined, color);
+        }
+      });
+    });
+    bindXylemTableClicks();
+  }
+
+  // ── Create & register a polygon ───────────────────────────────────────────
+  function addAnnotation(rawPts, cls, xylIdx, color){
+    const pts = rawPts.map(p => ({x:p[0]*DISP, y:p[1]*DISP}));
+    let fill, stroke;
+    if (color){
+      const [r,g,b] = color;
+      fill   = `rgba(${r},${g},${b},0.32)`;
+      stroke = `rgb(${r},${g},${b})`;
+    } else {
+      fill   = CLS_FILL[cls]   || 'rgba(200,200,0,.3)';
+      stroke = CLS_STROKE[cls] || '#cccc00';
+    }
+    const poly = new fabric.Polygon(pts, {
+      fill,
+      stroke,
+      strokeWidth:        1.5,
+      objectCaching:      false,
+      transparentCorners: false,
+      cornerColor:        '#cba6f7',
+      cornerSize:         6,
+      hasBorders:         true,
+    });
+    const id = ++uidCounter;
+    poly.data = {annId:id, cls, xylIdx: xylIdx !== undefined ? xylIdx : null, color: color||null};
+    annotations.push({id, cls, fabricObj:poly, visible:true});
+    fc.add(poly);
+    _pushSnap();
+    renderSidebar();
+    return {id, poly};
+  }
+
+  // ── Xylem table click → canvas highlight ─────────────────────────────────
+  function bindXylemTableClicks(){
+    const sec = document.getElementById('xylem-section-'+IDX);
+    if (!sec) return;
+    sec.querySelectorAll('tr.xylem-row').forEach(function(row){
+      row.addEventListener('click', function(){
+        const xIdx = +row.dataset.xylemIdx;
+        const ann  = annotations.find(a => a.cls==='Xylem' && a.fabricObj.data && a.fabricObj.data.xylIdx===xIdx);
+        if (ann){
+          setMode('select');
+          fc.setActiveObject(ann.fabricObj);
+          fc.requestRenderAll();
+          renderSidebar();
+        }
+        sec.querySelectorAll('tr.xylem-row').forEach(r => r.classList.remove('xylem-row-active'));
+        row.classList.add('xylem-row-active');
+      });
+    });
+  }
+
+  // ── Sidebar ───────────────────────────────────────────────────────────────
+  function renderSidebar(){
+    const active = fc.getActiveObject();
+
+    // Sync xylem table highlight with canvas selection
+    const xylSec = document.getElementById('xylem-section-'+IDX);
+    if (xylSec) {
+      xylSec.querySelectorAll('tr.xylem-row').forEach(r => r.classList.remove('xylem-row-active'));
+      if (active && active.data && active.data.cls === 'Xylem' && active.data.xylIdx !== null && active.data.xylIdx !== undefined) {
+        const matchRow = xylSec.querySelector('tr.xylem-row[data-xylem-idx="' + active.data.xylIdx + '"]');
+        if (matchRow) { matchRow.classList.add('xylem-row-active'); matchRow.scrollIntoView({block:'nearest'}); }
+      }
     }
 
-    // When files are selected via dialog
-    fileInput.addEventListener('change', (e) => {
-      updateFileList(e.target.files);
+    const el = document.getElementById('ann-list-'+IDX);
+    if (!annotations.length){
+      el.innerHTML = '<div style="padding:.7rem;color:var(--subtle);font-size:.75rem;text-align:center;">No annotations</div>';
+      return;
+    }
+    el.innerHTML = annotations.map(function(ann, i){
+      const isSelected = (active && active.data && active.data.annId===ann.id);
+      const xIdx = ann.fabricObj && ann.fabricObj.data && ann.fabricObj.data.xylIdx !== null && ann.fabricObj.data.xylIdx !== undefined ? ann.fabricObj.data.xylIdx : null;
+      const label = ann.cls === 'Xylem' && xIdx !== null
+        ? 'Xylem ' + xIdx
+        : ann.cls.replace('Vascular bundle','VB') + ' ' + (i+1);
+      return `<div class="ann-item ${isSelected?'selected':''}" data-id="${ann.id}">
+        <span class="ann-dot" style="background:${CLS_HEX[ann.cls]||'#cdd6f4'};opacity:${ann.visible?1:.35};"></span>
+        <span class="ann-name" title="${escHtml(ann.cls)}">${escHtml(label)}</span>
+        <button class="ann-icon-btn vis-btn" data-id="${ann.id}" title="Toggle visibility">
+          <i class="bi bi-${ann.visible?'eye':'eye-slash'}"></i></button>
+        <button class="ann-icon-btn del-btn-sb" data-id="${ann.id}" title="Delete">
+          <i class="bi bi-trash3"></i></button>
+      </div>`;
+    }).join('');
+
+    el.querySelectorAll('.ann-item').forEach(function(item){
+      item.addEventListener('click', function(e){
+        if (e.target.closest('.ann-icon-btn')) return;
+        const ann = annotations.find(a => a.id===+item.dataset.id);
+        if (ann){ fc.setActiveObject(ann.fabricObj); fc.requestRenderAll(); renderSidebar(); }
+      });
+    });
+    el.querySelectorAll('.vis-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        const ann = annotations.find(a => a.id===+btn.dataset.id);
+        if (ann){ ann.visible=!ann.visible; ann.fabricObj.set('visible',ann.visible); fc.requestRenderAll(); renderSidebar(); }
+      });
+    });
+    el.querySelectorAll('.del-btn-sb').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        removeAnnotation(+btn.dataset.id);
+      });
+    });
+  }
+
+  function removeAnnotation(id){
+    const idx = annotations.findIndex(a => a.id===id);
+    if (idx<0) return;
+    fc.remove(annotations[idx].fabricObj);
+    annotations.splice(idx,1);
+    fc.discardActiveObject();
+    fc.requestRenderAll();
+    _pushSnap();
+    renderSidebar();
+  }
+
+  // ── Merge button enable/disable ───────────────────────────────────────────
+  function updateMergeBtn(){
+    const sel = fc.getActiveObjects().filter(o => o.data && o.data.annId);
+    const btn = document.getElementById('btn-merge-'+IDX);
+    if (!btn) return;
+    btn.disabled = sel.length < 2;
+    btn.classList.toggle('merge-ready', sel.length >= 2);
+  }
+  fc.on('selection:created', function(){ renderSidebar(); updateMergeBtn(); });
+  fc.on('selection:updated', function(){ renderSidebar(); updateMergeBtn(); });
+  fc.on('selection:cleared', function(){ renderSidebar(); updateMergeBtn(); });
+  fc.on('object:modified', function(){ _pushSnap(); });
+
+  // ── Merge ─────────────────────────────────────────────────────────────────
+  document.getElementById('btn-merge-'+IDX).addEventListener('click', function(){
+    const selected = fc.getActiveObjects().filter(o => o.data && o.data.annId);
+    if (selected.length < 2) return;
+    const cls  = selected[0].data.cls;
+    const spin = document.getElementById('spin-'+IDX);
+    const stat = document.getElementById('status-'+IDX);
+    spin.classList.add('active');
+    stat.textContent = 'Merging via SAM…';
+
+    // Compute combined bounding box of all selected polygons in image space
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    selected.forEach(function(obj){
+      polyToImagePts(obj).forEach(function(pt){
+        if (pt[0] < minX) minX = pt[0];
+        if (pt[1] < minY) minY = pt[1];
+        if (pt[0] > maxX) maxX = pt[0];
+        if (pt[1] > maxY) maxY = pt[1];
+      });
     });
 
-    // Drag events
-    dropZone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      dropZone.classList.add('bg-primary', 'text-white');
-    });
-
-    dropZone.addEventListener('dragleave', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('bg-primary', 'text-white');
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('bg-primary', 'text-white');
-
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        fileInput.files = files; // Update file input files
-        updateFileList(files);
+    // Run SAM on the combined bounding box
+    fetch('/sam_prompt/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME, mode:'box', box:[minX, minY, maxX, maxY], class:cls}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      if (d.contour && d.contour.length >= 3){
+        selected.map(o=>o.data.annId).forEach(id => removeAnnotation(id));
+        fc.discardActiveObject();
+        addAnnotation(d.contour, cls);
+        fc.requestRenderAll();
+        stat.textContent = 'Merged — apply when ready.';
+      } else {
+        stat.textContent = 'Merge failed — no valid contour.';
       }
+    }).catch(function(){ spin.classList.remove('active'); stat.textContent='Merge request failed.'; });
+  });
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  document.addEventListener('keydown', function(e){
+    if (e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+    // Only act if this card is in view
+    const card = document.getElementById('card-'+IDX);
+    if (!card || !card.getBoundingClientRect().height) return;
+    if (e.key==='Delete'||e.key==='Backspace'){
+      const obj = fc.getActiveObject();
+      if (obj && obj.data && obj.data.annId) removeAnnotation(obj.data.annId);
+    }
+    if (e.key==='s'||e.key==='S') setMode('select');
+    if (e.key==='b'||e.key==='B') setMode('box');
+    if (e.key==='c'||e.key==='C') setMode('click');
+    if (e.key==='m'||e.key==='M'){ const mb=document.getElementById('btn-merge-'+IDX); if(mb&&!mb.disabled) mb.click(); }
+    if (e.key==='r'||e.key==='R'){ document.getElementById('btn-toggle-'+IDX).click(); }
+    if (e.key==='+'||e.key==='=') zoomBy(1.2);
+    if (e.key==='-') zoomBy(1/1.2);
+    if (e.key==='f'||e.key==='F') zoomFit();
+    if ((e.ctrlKey||e.metaKey) && !e.shiftKey && (e.key==='z'||e.key==='Z')){ e.preventDefault(); doUndo(); }
+    if ((e.ctrlKey||e.metaKey) && ((e.shiftKey && (e.key==='z'||e.key==='Z')) || e.key==='y'||e.key==='Y')){ e.preventDefault(); doRedo(); }
+  });
+
+  // ── Vertex editing on double-click ────────────────────────────────────────
+  fc.on('mouse:dblclick', function(opt){
+    const obj = opt.target;
+    if (!obj||obj.type!=='polygon'||currentMode!=='select') return;
+    const lastIdx = obj.points.length-1;
+    obj.cornerStyle='circle'; obj.cornerSize=8; obj.cornerColor='#cba6f7'; obj.hasBorders=false;
+    obj.controls = obj.points.reduce(function(acc,pt,i){
+      acc['p'+i] = new fabric.Control({
+        positionHandler: polyPosHandler,
+        actionHandler:   anchorWrapper(i>0?i-1:lastIdx, polyActionHandler),
+        actionName:      'modifyPolygon',
+        pointIndex:      i,
+      });
+      return acc;
+    }, {});
+    fc.setActiveObject(obj); fc.requestRenderAll();
+  });
+  fc.on('selection:cleared', function(){
+    fc.getObjects('polygon').forEach(function(obj){
+      if (obj.cornerStyle==='circle'){ obj.cornerStyle='rect'; obj.hasBorders=true; obj.controls=fabric.Object.prototype.controls; }
     });
+  });
+  function polyPosHandler(dim,finalMatrix,obj){
+    const x=obj.points[this.pointIndex].x-obj.pathOffset.x;
+    const y=obj.points[this.pointIndex].y-obj.pathOffset.y;
+    return fabric.util.transformPoint({x,y}, fabric.util.multiplyTransformMatrices(obj.canvas.viewportTransform,obj.calcTransformMatrix()));
+  }
+  function polyActionHandler(ev,transform,x,y){
+    const poly=transform.target, ctrl=poly.controls[poly.__corner];
+    const local=poly.toLocalPoint(new fabric.Point(x,y),'center','center');
+    const base=poly._getNonTransformedDimensions(), size=poly._getTransformedDimensions(0,0);
+    poly.points[ctrl.pointIndex]={x:local.x*base.x/size.x+poly.pathOffset.x, y:local.y*base.y/size.y+poly.pathOffset.y};
+    return true;
+  }
+  function anchorWrapper(anchorIdx,fn){
+    return function(ev,transform,x,y){
+      const obj=transform.target;
+      const absPoint=fabric.util.transformPoint({x:obj.points[anchorIdx].x-obj.pathOffset.x,y:obj.points[anchorIdx].y-obj.pathOffset.y},obj.calcTransformMatrix());
+      const done=fn(ev,transform,x,y);
+      obj._setPositionDimensions({});
+      const base=obj._getNonTransformedDimensions();
+      const nx=(obj.points[anchorIdx].x-obj.pathOffset.x)/base.x;
+      const ny=(obj.points[anchorIdx].y-obj.pathOffset.y)/base.y;
+      obj.setPositionByOrigin(absPoint,nx+.5,ny+.5);
+      return done;
+    };
+  }
 
-  </script>
+  // ── Mode switching ────────────────────────────────────────────────────────
+  let currentMode = 'select';
+  function setMode(mode){
+    currentMode = mode;
+    ['select','box','click'].forEach(function(m){
+      const btn=document.getElementById('btn-'+m+'-'+IDX);
+      if (btn) btn.classList.toggle('active', m===mode);
+    });
+    document.getElementById('hint-'+IDX).innerHTML = HINTS[mode]||'';
+    fc.isDrawingMode = false;
+    const isSel = (mode==='select');
+    fc.selection = isSel;
+    fc.getObjects('polygon').forEach(o=>{ o.selectable=isSel; o.evented=isSel; });
+    fc.getObjects('image').forEach(o=>{ o.selectable=false; o.evented=false; });
+    wrap.style.cursor = isSel ? 'default' : 'crosshair';
+    if (!isSel) fc.discardActiveObject();
+    fc.requestRenderAll();
+  }
+  document.querySelectorAll('#card-'+IDX+' .tool-btn[data-mode]').forEach(function(btn){
+    btn.addEventListener('click', function(){ setMode(btn.dataset.mode); });
+  });
+
+  // ── Zoom ─────────────────────────────────────────────────────────────────
+  fc.on('mouse:wheel', function(opt){
+    const delta=opt.e.deltaY;
+    let z=fc.getZoom()*(0.999**delta);
+    z=Math.min(Math.max(z,0.15),10);
+    fc.zoomToPoint({x:opt.e.offsetX,y:opt.e.offsetY},z);
+    opt.e.preventDefault(); opt.e.stopPropagation();
+  });
+  let isPanning=false,lastX=0,lastY=0;
+  fc.on('mouse:down', opt=>{ if(opt.e.altKey){isPanning=true;fc.selection=false;lastX=opt.e.clientX;lastY=opt.e.clientY;} });
+  fc.on('mouse:move', opt=>{ if(!isPanning)return; const vpt=fc.viewportTransform; vpt[4]+=opt.e.clientX-lastX; vpt[5]+=opt.e.clientY-lastY; fc.requestRenderAll(); lastX=opt.e.clientX; lastY=opt.e.clientY; });
+  fc.on('mouse:up', ()=>{ isPanning=false; });
+  function zoomBy(f){ const z=Math.min(Math.max(fc.getZoom()*f,0.15),10); fc.zoomToPoint({x:CW/2,y:CH/2},z); }
+  function zoomFit(){ fc.setViewportTransform([1,0,0,1,0,0]); fc.requestRenderAll(); }
+  document.getElementById('zoom-in-'+IDX).addEventListener('click',  ()=>zoomBy(1.25));
+  document.getElementById('zoom-out-'+IDX).addEventListener('click', ()=>zoomBy(0.8));
+  document.getElementById('zoom-fit-'+IDX).addEventListener('click', zoomFit);
+
+  // ── Refined / Draw toggle ─────────────────────────────────────────────────
+  let showingRefined = false;
+  const canvasAreaEl  = document.getElementById('canvas-area-'+IDX);
+  const refinedViewEl = document.getElementById('refined-view-'+IDX);
+  document.getElementById('btn-toggle-'+IDX).addEventListener('click', function(){
+    showingRefined = !showingRefined;
+    if (showingRefined){
+      canvasAreaEl.style.display  = 'none';
+      refinedViewEl.style.display = 'flex';
+      document.getElementById('refined-img-'+IDX).src = currentOverlayB64;
+      this.innerHTML = '<i class="bi bi-pencil-square"></i> Draw';
+      this.classList.add('active');
+    } else {
+      canvasAreaEl.style.display  = 'flex';
+      refinedViewEl.style.display = 'none';
+      this.innerHTML = '<i class="bi bi-layers"></i> Refined';
+      this.classList.remove('active');
+    }
+  });
+
+  // ── Toggle original image ─────────────────────────────────────────────────
+  document.getElementById('btn-orig-'+IDX).addEventListener('click', function(){
+    const panel=document.getElementById('orig-panel-'+IDX);
+    const vis=panel.style.display==='none';
+    panel.style.display = vis?'block':'none';
+    this.classList.toggle('active', vis);
+  });
+
+  // ── Box drawing ───────────────────────────────────────────────────────────
+  let drawingBox=false, boxStartFab=null, boxRect=null;
+  fc.on('mouse:down', function(opt){
+    if (currentMode!=='box'||isPanning) return;
+    const p=fc.getPointer(opt.e);
+    drawingBox=true; boxStartFab={x:p.x,y:p.y};
+    boxRect=new fabric.Rect({left:p.x,top:p.y,width:0,height:0,fill:'rgba(203,166,247,.1)',stroke:'#cba6f7',strokeWidth:1.5,strokeDashArray:[5,3],selectable:false,evented:false});
+    fc.add(boxRect);
+  });
+  fc.on('mouse:move', function(opt){
+    if (!drawingBox||!boxRect) return;
+    const p=fc.getPointer(opt.e);
+    boxRect.set({left:Math.min(p.x,boxStartFab.x),top:Math.min(p.y,boxStartFab.y),width:Math.abs(p.x-boxStartFab.x),height:Math.abs(p.y-boxStartFab.y)});
+    fc.requestRenderAll();
+  });
+
+  // ── Mouse-up: box finish + click prompt ──────────────────────────────────
+  fc.on('mouse:up', function(opt){
+    if (isPanning) return;
+    if (currentMode==='box'&&drawingBox){
+      drawingBox=false;
+      const p=fc.getPointer(opt.e);
+      fc.remove(boxRect); boxRect=null;
+      const x1=Math.min(p.x,boxStartFab.x)/DISP, y1=Math.min(p.y,boxStartFab.y)/DISP;
+      const x2=Math.max(p.x,boxStartFab.x)/DISP, y2=Math.max(p.y,boxStartFab.y)/DISP;
+      if ((x2-x1)>5&&(y2-y1)>5)
+        runSAM({mode:'box',box:[x1,y1,x2,y2],cls:document.getElementById('cls-'+IDX).value});
+      return;
+    }
+    if (currentMode==='click'){
+      if (opt.target&&opt.target.data&&opt.target.data.annId) return;
+      const p=fc.getPointer(opt.e);
+      runSAM({mode:'point',point:[p.x/DISP,p.y/DISP],cls:document.getElementById('cls-'+IDX).value});
+    }
+  });
+
+  // ── SAM prompt ────────────────────────────────────────────────────────────
+  function runSAM(params){
+    const spin=document.getElementById('spin-'+IDX), stat=document.getElementById('status-'+IDX);
+    spin.classList.add('active'); stat.textContent='SAM processing…';
+    fetch('/sam_prompt/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME,class:params.cls,mode:params.mode,box:params.box||null,point:params.point||null}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      if (d.contour&&d.contour.length>=3){
+        // Assign xylIdx for new Xylem annotations
+        const xylIdx = params.cls==='Xylem' ? annotations.filter(a=>a.cls==='Xylem').length + 1 : undefined;
+        addAnnotation(d.contour, params.cls, xylIdx);
+        fc.requestRenderAll();
+        stat.textContent='Annotation added. Apply when ready.';
+      } else {
+        stat.textContent='No mask found — try a different area.';
+      }
+    }).catch(()=>{ spin.classList.remove('active'); stat.textContent='SAM request failed.'; });
+  }
+
+  // ── Apply corrections ─────────────────────────────────────────────────────
+  document.getElementById('apply-'+IDX).addEventListener('click', function(){
+    const polygons = [];
+    annotations.forEach(function(ann){
+      if (!ann.visible) return;
+      const pts = polyToImagePts(ann.fabricObj);
+      if (pts.length >= 3) polygons.push({class:ann.cls, points:pts});
+    });
+    const applyBtn=document.getElementById('apply-'+IDX);
+    const spin=document.getElementById('spin-'+IDX);
+    const stat=document.getElementById('status-'+IDX);
+    applyBtn.disabled=true; spin.classList.add('active'); stat.textContent='Reanalyzing…';
+
+    fetch('/reanalyze/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME, polygons}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      applyBtn.disabled=false;
+      stat.textContent='✓ Corrections applied';
+
+      // Update stored overlay + refined view
+      currentOverlayB64 = d.overlay_image;
+      document.getElementById('refined-img-'+IDX).src = currentOverlayB64;
+
+      // Redraw canvas with server-refined contours
+      annotations.slice().forEach(a => fc.remove(a.fabricObj));
+      annotations=[]; uidCounter=0;
+      const mx2 = d.merged_xylem || [];
+      ['Total root','Vascular bundle','Xylem'].forEach(function(cls){
+        (d.contours[cls]||[]).forEach(function(pts, inst){
+          if (pts&&pts.length>=3){
+            const color = (cls==='Xylem' && mx2[inst]) ? mx2[inst].rgb : undefined;
+            addAnnotation(pts, cls, cls==='Xylem'?inst+1:undefined, color);
+          }
+        });
+      });
+      fc.discardActiveObject(); fc.requestRenderAll(); updateMergeBtn();
+      bindXylemTableClicks();
+
+      // Update metrics panel
+      const mp=document.getElementById('metrics-'+IDX);
+      mp.querySelector('.n-xylem').textContent    = d.n_xylem;
+      mp.querySelector('.vb-area').textContent    = fmtNum(d.metrics.vb_total_area);
+      mp.querySelector('.vb-diam').textContent    = fmtNum(d.metrics.vb_max_diameter);
+      mp.querySelector('.root-area').textContent  = fmtNum(d.metrics.root_total_area);
+      mp.querySelector('.root-diam').textContent  = fmtNum(d.metrics.root_max_diameter);
+
+      // Rebuild xylem table
+      const sec=document.getElementById('xylem-section-'+IDX);
+      const mx=d.merged_xylem||[];
+      if (sec && mx.length){
+        const keys=Object.keys(mx[0]).filter(k=>k!=='instance'&&k!=='rgb');
+        sec.innerHTML=`<h6><i class="bi bi-table me-1"></i>Xylem Details <span style="color:var(--text3);font-weight:400;font-size:.7rem;">(click row to highlight)</span></h6>
+          <div class="table-wrap">${buildXylemTable(mx,keys)}</div>`;
+        bindXylemTableClicks();
+      }
+    }).catch(()=>{ spin.classList.remove('active'); applyBtn.disabled=false; stat.textContent='Request failed.'; });
+  });
+
+  // ── Register polygon getter in global registry (used by batch export) ───────
+  window._cardExport[FILENAME] = function(){
+    const polygons = [];
+    annotations.forEach(function(ann){
+      if (!ann.visible) return;
+      const pts = polyToImagePts(ann.fabricObj);
+      if (pts.length >= 3) polygons.push({cls: ann.cls, points: pts});
+    });
+    return polygons;
+  };
+
+
+} // end initCard
+</script>
 </body>
-
 </html>

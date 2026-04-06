@@ -2,9 +2,15 @@
 __pycache__/
 *.py[cod]
 *$py.class
-weight
-temp_results
-staticfiles
+weight/
+temp_results/
+staticfiles/
+
+# Project-internal files not for public repo
+TODO.md
+plans_for_updated_waveapp.md
+d2d/
+instruction.md
 
 # C extensions
 *.so
