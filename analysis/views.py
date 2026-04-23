@@ -1,5 +1,6 @@
 import json
 import zipfile
+import threading
 import numpy as np
 import cv2
 from django.shortcuts import render
@@ -13,6 +14,21 @@ from .engine import progressive_yolo_sam, sam_predictor, calculate_metrics
 from .utils import refine_masks, blend_mask, draw_boxes, class_color_cycle, mask_from_contour, compute_props
 
 _last_analysis_cache = {}
+
+# Shared broadcast state — visible to all connected clients via /status/
+_broadcast_status = {
+    'state': 'idle',       # 'analyzing' | 'idle'
+    'total': 0,
+    'done': 0,
+    'current_file': '',
+}
+_broadcast_lock = threading.Lock()
+
+
+def status_view(request):
+    """Return current server-side processing state for multi-user visibility."""
+    with _broadcast_lock:
+        return JsonResponse(dict(_broadcast_status))
 
 
 def pil_to_base64(img):
@@ -43,7 +59,12 @@ def analyze_stream_view(request):
 
     def event_stream():
         total = len(images)
-        for i, image_file in enumerate(images):
+        with _broadcast_lock:
+            _broadcast_status.update({'state': 'analyzing', 'total': total, 'done': 0, 'current_file': ''})
+        try:
+          for i, image_file in enumerate(images):
+            with _broadcast_lock:
+                _broadcast_status.update({'done': i, 'current_file': image_file.name})
             yield f"data: {json.dumps({'type':'start','file':image_file.name,'index':i,'total':total})}\n\n"
             try:
                 image = Image.open(image_file).convert('RGB')
@@ -79,20 +100,38 @@ def analyze_stream_view(request):
                     'img_width':      original_img.width,
                     'img_height':     original_img.height,
                 }
-                _rgb_buf = BytesIO()
-                Image.fromarray(result['rgb_np']).save(_rgb_buf, format='JPEG', quality=92)
+                _rgb_buf  = BytesIO()
+                _orig_buf = BytesIO()
+                _ovly_buf = BytesIO()
+                Image.fromarray(result['rgb_np']).save(_rgb_buf,  format='JPEG', quality=92)
+                original_img.save(_orig_buf, format='JPEG', quality=92)
+                overlay_img.save(_ovly_buf,  format='JPEG', quality=92)
                 _last_analysis_cache[image_file.name] = {
-                    **payload,
-                    'rgb_bytes': _rgb_buf.getvalue(),
-                    'scale':     result.get('scale', 1.0),
-                    'boxes':     result['boxes'],
-                    'labels':    result['labels'],
+                    'file':          image_file.name,
+                    'n_xylem':       result['n_xylem'],
+                    'n_vb':          result['n_vb'],
+                    'n_root':        result['n_root'],
+                    'metrics':       result['metrics'],
+                    'merged_xylem':  merged,
+                    'contours':      result['contours'],
+                    'colour_map':    colour_map,
+                    'img_width':     original_img.width,
+                    'img_height':    original_img.height,
+                    'rgb_bytes':     _rgb_buf.getvalue(),
+                    'orig_bytes':    _orig_buf.getvalue(),
+                    'overlay_bytes': _ovly_buf.getvalue(),
+                    'scale':         result.get('scale', 1.0),
+                    'boxes':         result['boxes'],
+                    'labels':        result['labels'],
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'type':'error','file':image_file.name,'message':str(e)})}\n\n"
 
-        yield f"data: {json.dumps({'type':'done','total':total})}\n\n"
+          yield f"data: {json.dumps({'type':'done','total':total})}\n\n"
+        finally:
+            with _broadcast_lock:
+                _broadcast_status.update({'state': 'idle', 'total': 0, 'done': 0, 'current_file': ''})
 
     resp = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
     resp['Cache-Control']      = 'no-cache'
@@ -478,12 +517,13 @@ def generate_xlsx_for_result(result):
     ws_sum = wb.active
     ws_sum.title = "Summary"
     ws_sum.append(["Image", "Xylem Count", "Vascular Bundle Area",
-                   "Vascular Bundle Diameter", "Total Root Diameter"])
+                   "Vascular Bundle Diameter", "Total Root Area", "Total Root Diameter"])
     ws_sum.append([
         result['file'],
         result['n_xylem'],
         result['metrics'].get('vb_total_area', 0),
         result['metrics'].get('vb_max_diameter', 0),
+        result['metrics'].get('root_total_area', 0),
         result['metrics'].get('root_max_diameter', 0),
     ])
 
@@ -531,7 +571,7 @@ def download_all_xlsx(request):
     ws_sum = wb.active
     ws_sum.title = "Summary"
     ws_sum.append(["Image", "Xylem Count", "Vascular Bundle Area",
-                   "Vascular Bundle Diameter", "Total Root Diameter"])
+                   "Vascular Bundle Diameter", "Total Root Area", "Total Root Diameter"])
 
     ws_xy = wb.create_sheet(title="Xylem Details")
     ws_xy.append(["Image", "Xylem ID", "Xylem Area", "Xylem Diameter"])
@@ -545,6 +585,7 @@ def download_all_xlsx(request):
             result['n_xylem'],
             result['metrics'].get('vb_total_area', 0),
             result['metrics'].get('vb_max_diameter', 0),
+            result['metrics'].get('root_total_area', 0),
             result['metrics'].get('root_max_diameter', 0),
         ])
         for d in result['metrics'].get('xylem_details', []):
