@@ -564,10 +564,9 @@ def export_training_view(request):
     xml_bytes = _build_cvat_xml(filename, cached.get('img_width', 0),
                                 cached.get('img_height', 0), polygons)
 
-    orig_b64 = cached.get('original_image', '')
-    if ',' not in orig_b64:
+    img_bytes = cached.get('orig_bytes')
+    if not img_bytes:
         return HttpResponseBadRequest("Original image not available in cache")
-    img_bytes = base64.b64decode(orig_b64.split(',', 1)[1])
 
     buf = BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -603,10 +602,9 @@ def export_training_batch_view(request):
             stem   = filename.rsplit('.', 1)[0] if '.' in filename else filename
             xml_bytes = _build_cvat_xml(filename, cached.get('img_width', 0),
                                         cached.get('img_height', 0), polygons)
-            orig_b64 = cached.get('original_image', '')
-            if ',' not in orig_b64:
+            img_bytes = cached.get('orig_bytes')
+            if not img_bytes:
                 continue
-            img_bytes = base64.b64decode(orig_b64.split(',', 1)[1])
             zf.writestr(f'images/{filename}', img_bytes)
             zf.writestr(f'labels/{stem}.xml', xml_bytes)
 
