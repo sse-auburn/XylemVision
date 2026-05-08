@@ -3,6 +3,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="csrf-token" content="{{ csrf_token }}"/>
   <title>XylemVision</title>
@@ -576,6 +579,8 @@ function buildCardHTML(data, idx){
           <button class="tool-btn active" data-mode="select" id="btn-select-${idx}" title="Select/edit polygons (S)"><i class="bi bi-cursor"></i> Select</button>
           <button class="tool-btn" data-mode="box"    id="btn-box-${idx}"    title="Box+SAM (B)"><i class="bi bi-bounding-box"></i> Box+SAM</button>
           <button class="tool-btn" data-mode="click"  id="btn-click-${idx}"  title="Click+SAM (C)"><i class="bi bi-cursor-fill"></i> Click+SAM</button>
+          <button class="tool-btn" data-mode="click_pos" id="btn-click-pos-${idx}" title="Add positive point — refine current mask"><i class="bi bi-plus-circle-fill" style="color:#a6e3a1"></i></button>
+          <button class="tool-btn" data-mode="click_neg" id="btn-click-neg-${idx}" title="Add negative point — exclude region from current mask"><i class="bi bi-dash-circle-fill" style="color:#f38ba8"></i></button>
           <div class="sep"></div>
           <button class="tool-btn" id="btn-merge-${idx}" title="Merge selected polygons (M)" disabled><i class="bi bi-union"></i> Merge</button>
           <div class="sep"></div>
@@ -687,13 +692,15 @@ function initCard(data, IDX){
   const IMG_W    = data.img_width;
   const IMG_H    = data.img_height;
 
-  const CLS_FILL   = {'Xylem':'rgba(243,139,168,.32)','Vascular bundle':'rgba(166,227,161,.28)','Total root':'rgba(250,179,135,.28)'};
+  const CLS_FILL   = {'Xylem':'rgba(243,139,168,.18)','Vascular bundle':'rgba(166,227,161,.18)','Total root':'rgba(250,179,135,.16)'};
   const CLS_STROKE = {'Xylem':'#f38ba8','Vascular bundle':'#a6e3a1','Total root':'#fab387'};
   const CLS_HEX    = {'Xylem':'#f38ba8','Vascular bundle':'#a6e3a1','Total root':'#fab387'};
   const HINTS = {
-    select: 'Select — click polygon &nbsp;|&nbsp; double-click to edit vertices &nbsp;|&nbsp; scroll=zoom &nbsp;|&nbsp; Alt+drag=pan',
-    box:    'Box+SAM — drag a rectangle; SAM traces the boundary',
-    click:  'Click+SAM — click inside any structure; SAM auto-segments it',
+    select:    'Select — click polygon &nbsp;|&nbsp; double-click to edit vertices &nbsp;|&nbsp; scroll=zoom &nbsp;|&nbsp; Alt+drag=pan',
+    box:       'Box+SAM — drag a rectangle; SAM traces the boundary',
+    click:     'Click+SAM — click inside a structure; switch to + or − to refine',
+    click_pos: 'Refine + — click an area that should be INCLUDED in the current mask',
+    click_neg: 'Refine − — click an area that should be EXCLUDED from the current mask',
   };
 
   // Canvas setup
@@ -816,20 +823,21 @@ function initCard(data, IDX){
     let fill, stroke;
     if (color){
       const [r,g,b] = color;
-      fill   = `rgba(${r},${g},${b},0.32)`;
+      fill   = `rgba(${r},${g},${b},0.18)`;
       stroke = `rgb(${r},${g},${b})`;
     } else {
-      fill   = CLS_FILL[cls]   || 'rgba(200,200,0,.3)';
+      fill   = CLS_FILL[cls]   || 'rgba(200,200,0,.18)';
       stroke = CLS_STROKE[cls] || '#cccc00';
     }
     const poly = new fabric.Polygon(pts, {
       fill,
       stroke,
-      strokeWidth:        1.5,
+      strokeWidth:        0.5,
+      strokeUniform:      true,
       objectCaching:      false,
       transparentCorners: false,
       cornerColor:        '#cba6f7',
-      cornerSize:         6,
+      cornerSize:         3,
       hasBorders:         true,
     });
     const id = ++uidCounter;
@@ -1054,9 +1062,24 @@ function initCard(data, IDX){
 
   // ── Mode switching ────────────────────────────────────────────────────────
   let currentMode = 'select';
+  // Refinement session state — populated when in click/click_pos/click_neg
+  let activePoints = [];     // [{x_img, y_img, label}, ...] in original-image space
+  let activeAnn    = null;   // annotation currently being refined
+
+  function clearActiveRefine(){
+    activePoints = [];
+    activeAnn    = null;
+  }
+
   function setMode(mode){
+    const prev = currentMode;
     currentMode = mode;
-    ['select','box','click'].forEach(function(m){
+    // Leaving any click-family mode finalises the active refinement
+    const refineModes = ['click','click_pos','click_neg'];
+    if (refineModes.includes(prev) && !refineModes.includes(mode)) {
+      clearActiveRefine();
+    }
+    ['select','box','click','click_pos','click_neg'].forEach(function(m){
       const btn=document.getElementById('btn-'+m+'-'+IDX);
       if (btn) btn.classList.toggle('active', m===mode);
     });
@@ -1075,18 +1098,32 @@ function initCard(data, IDX){
   });
 
   // ── Zoom ─────────────────────────────────────────────────────────────────
+  function clampViewport(){
+    const vpt  = fc.viewportTransform;
+    const zoom = fc.getZoom();
+    if (zoom > 1) {
+      // Prevent panning the image past either edge when zoomed in
+      vpt[4] = Math.min(0, Math.max(vpt[4], CW * (1 - zoom)));
+      vpt[5] = Math.min(0, Math.max(vpt[5], CH * (1 - zoom)));
+    } else {
+      // Zoomed out: keep image at least partially on-screen
+      vpt[4] = Math.min(CW * 0.9, Math.max(vpt[4], CW * (zoom - 1)));
+      vpt[5] = Math.min(CH * 0.9, Math.max(vpt[5], CH * (zoom - 1)));
+    }
+    fc.requestRenderAll();
+  }
   fc.on('mouse:wheel', function(opt){
     const delta=opt.e.deltaY;
     let z=fc.getZoom()*(0.999**delta);
     z=Math.min(Math.max(z,0.15),10);
     fc.zoomToPoint({x:opt.e.offsetX,y:opt.e.offsetY},z);
+    clampViewport();
     opt.e.preventDefault(); opt.e.stopPropagation();
   });
   let isPanning=false,lastX=0,lastY=0;
   fc.on('mouse:down', opt=>{ if(opt.e.altKey){isPanning=true;fc.selection=false;lastX=opt.e.clientX;lastY=opt.e.clientY;} });
-  fc.on('mouse:move', opt=>{ if(!isPanning)return; const vpt=fc.viewportTransform; vpt[4]+=opt.e.clientX-lastX; vpt[5]+=opt.e.clientY-lastY; fc.requestRenderAll(); lastX=opt.e.clientX; lastY=opt.e.clientY; });
-  fc.on('mouse:up', ()=>{ isPanning=false; });
-  function zoomBy(f){ const z=Math.min(Math.max(fc.getZoom()*f,0.15),10); fc.zoomToPoint({x:CW/2,y:CH/2},z); }
+  fc.on('mouse:move', opt=>{ if(!isPanning)return; const vpt=fc.viewportTransform; vpt[4]+=opt.e.clientX-lastX; vpt[5]+=opt.e.clientY-lastY; clampViewport(); lastX=opt.e.clientX; lastY=opt.e.clientY; });
+  function zoomBy(f){ const z=Math.min(Math.max(fc.getZoom()*f,0.15),10); fc.zoomToPoint({x:CW/2,y:CH/2},z); clampViewport(); }
   function zoomFit(){ fc.setViewportTransform([1,0,0,1,0,0]); fc.requestRenderAll(); }
   document.getElementById('zoom-in-'+IDX).addEventListener('click',  ()=>zoomBy(1.25));
   document.getElementById('zoom-out-'+IDX).addEventListener('click', ()=>zoomBy(0.8));
@@ -1138,7 +1175,10 @@ function initCard(data, IDX){
 
   // ── Mouse-up: box finish + click prompt ──────────────────────────────────
   fc.on('mouse:up', function(opt){
-    if (isPanning) return;
+    const wasPanning = isPanning;
+    isPanning = false;
+    fc.selection = true;
+    if (wasPanning) return;
     if (currentMode==='box'&&drawingBox){
       drawingBox=false;
       const p=fc.getPointer(opt.e);
@@ -1149,25 +1189,41 @@ function initCard(data, IDX){
         runSAM({mode:'box',box:[x1,y1,x2,y2],cls:document.getElementById('cls-'+IDX).value});
       return;
     }
-    if (currentMode==='click'){
-      if (opt.target&&opt.target.data&&opt.target.data.annId) return;
-      const p=fc.getPointer(opt.e);
-      runSAM({mode:'point',point:[p.x/DISP,p.y/DISP],cls:document.getElementById('cls-'+IDX).value});
+    if (currentMode==='click' || currentMode==='click_pos' || currentMode==='click_neg'){
+      // Ignore clicks landing on a polygon (so user can still select existing
+      // ones) but allow clicks landing on our own point markers.
+      if (opt.target && opt.target.data && opt.target.data.annId) return;
+      const p = fc.getPointer(opt.e);
+      const x_img = p.x / DISP, y_img = p.y / DISP;
+      const cls   = document.getElementById('cls-'+IDX).value;
+
+      if (currentMode === 'click') {
+        clearActiveRefine();
+        activePoints = [{x_img, y_img, label: 1}];
+      } else if (activePoints.length === 0 || !activeAnn) {
+        activePoints = [{x_img, y_img, label: 1}];
+      } else {
+        activePoints.push({x_img, y_img, label: currentMode === 'click_pos' ? 1 : 0});
+      }
+      runRefineSAM(cls);
     }
   });
 
-  // ── SAM prompt ────────────────────────────────────────────────────────────
+  // ── SAM prompt — single-point/box (used by box mode only) ─────────────────
   function runSAM(params){
     const spin=document.getElementById('spin-'+IDX), stat=document.getElementById('status-'+IDX);
     spin.classList.add('active'); stat.textContent='SAM processing…';
+    const existing = annotations
+      .filter(a => a.cls === params.cls && a.visible)
+      .map(a => polyToImagePts(a.fabricObj))
+      .filter(pts => pts.length >= 3);
     fetch('/sam_prompt/',{
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-      body:JSON.stringify({filename:FILENAME,class:params.cls,mode:params.mode,box:params.box||null,point:params.point||null}),
+      body:JSON.stringify({filename:FILENAME,class:params.cls,mode:params.mode,box:params.box||null,point:params.point||null,existing:existing}),
     }).then(r=>r.json()).then(function(d){
       spin.classList.remove('active');
       if (d.contour&&d.contour.length>=3){
-        // Assign xylIdx for new Xylem annotations
         const xylIdx = params.cls==='Xylem' ? annotations.filter(a=>a.cls==='Xylem').length + 1 : undefined;
         addAnnotation(d.contour, params.cls, xylIdx);
         fc.requestRenderAll();
@@ -1176,6 +1232,47 @@ function initCard(data, IDX){
         stat.textContent='No mask found — try a different area.';
       }
     }).catch(()=>{ spin.classList.remove('active'); stat.textContent='SAM request failed.'; });
+  }
+
+  // ── SAM prompt — multi-point refinement ───────────────────────────────────
+  // Each call replaces the active polygon with one regenerated from the
+  // accumulated positive + negative points, so the user can iteratively
+  // shape the mask without leaving the workflow.
+  function runRefineSAM(cls){
+    const spin=document.getElementById('spin-'+IDX), stat=document.getElementById('status-'+IDX);
+    spin.classList.add('active'); stat.textContent='SAM refining…';
+    // Same-class neighbours act as exclusion zones — but NOT the polygon
+    // we are currently refining (it's about to be replaced).
+    const existing = annotations
+      .filter(a => a.cls === cls && a.visible && a !== activeAnn)
+      .map(a => polyToImagePts(a.fabricObj))
+      .filter(pts => pts.length >= 3);
+    const points = activePoints.map(p => [p.x_img, p.y_img, p.label]);
+    fetch('/sam_prompt/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body:JSON.stringify({filename:FILENAME,class:cls,mode:'point',points:points,existing:existing}),
+    }).then(r=>r.json()).then(function(d){
+      spin.classList.remove('active');
+      if (d.contour && d.contour.length >= 3){
+        if (activeAnn) {
+          fc.remove(activeAnn.fabricObj);
+          annotations = annotations.filter(a => a !== activeAnn);
+          activeAnn = null;
+        }
+        const xylIdx = cls==='Xylem' ? annotations.filter(a=>a.cls==='Xylem').length + 1 : undefined;
+        const r = addAnnotation(d.contour, cls, xylIdx);
+        activeAnn = annotations.find(a => a.id === r.id) || null;
+        fc.requestRenderAll();
+        stat.textContent = activePoints.length + ' point(s) — switch tool to finalise';
+        renderSidebar();
+      } else {
+        stat.textContent='No mask found — try a different point.';
+      }
+    }).catch(()=>{
+      spin.classList.remove('active');
+      stat.textContent='SAM request failed.';
+    });
   }
 
   // ── Apply corrections ─────────────────────────────────────────────────────

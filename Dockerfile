@@ -45,4 +45,4 @@ RUN python manage.py collectstatic --noinput
 EXPOSE 8000
 
 # Run with gunicorn
-CMD ["gunicorn", "root.wsgi:application", "--bind", "0.0.0.0:8000", "--chdir", "/app", "--timeout", "3600", "--workers", "1"]
+CMD ["gunicorn", "root.wsgi:application", "--bind", "0.0.0.0:8000", "--chdir", "/app", "--timeout", "180", "--graceful-timeout", "30", "--workers", "1", "--threads", "4"]
