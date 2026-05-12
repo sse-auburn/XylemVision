@@ -882,6 +882,17 @@ function initCard(data, IDX){
         if (matchRow) { matchRow.classList.add('xylem-row-active'); matchRow.scrollIntoView({block:'nearest'}); }
       }
     }
+    if (e.key==='s'||e.key==='S') setMode('select');
+    if (e.key==='b'||e.key==='B') setMode('box');
+    if (e.key==='c'||e.key==='C') setMode('click');
+    if (e.key==='m'||e.key==='M'){ const mb=document.getElementById('btn-merge-'+IDX); if(mb&&!mb.disabled) mb.click(); }
+    if (e.key==='r'||e.key==='R'){ document.getElementById('btn-toggle-'+IDX).click(); }
+    if (e.key==='+'||e.key==='=') zoomBy(1.2);
+    if (e.key==='-') zoomBy(1/1.2);
+    if (e.key==='f'||e.key==='F') zoomFit();
+    if ((e.ctrlKey||e.metaKey) && !e.shiftKey && (e.key==='z'||e.key==='Z')){ e.preventDefault(); doUndo(); }
+    if ((e.ctrlKey||e.metaKey) && ((e.shiftKey && (e.key==='z'||e.key==='Z')) || e.key==='y'||e.key==='Y')){ e.preventDefault(); doRedo(); }
+  });
 
     const el = document.getElementById('ann-list-'+IDX);
     if (!annotations.length){
@@ -970,6 +981,19 @@ function initCard(data, IDX){
         if (pt[1] > maxY) maxY = pt[1];
       });
     });
+    document.getElementById('hint-'+IDX).innerHTML = HINTS[mode]||'';
+    fc.isDrawingMode = false;
+    const isSel = (mode==='select');
+    fc.selection = isSel;
+    fc.getObjects('polygon').forEach(o=>{ o.selectable=isSel; o.evented=isSel; });
+    fc.getObjects('image').forEach(o=>{ o.selectable=false; o.evented=false; });
+    wrap.style.cursor = isSel ? 'default' : 'crosshair';
+    if (!isSel) fc.discardActiveObject();
+    fc.requestRenderAll();
+  }
+  document.querySelectorAll('#card-'+IDX+' .tool-btn[data-mode]').forEach(function(btn){
+    btn.addEventListener('click', function(){ setMode(btn.dataset.mode); });
+  });
 
     // Run SAM on the combined bounding box
     fetch('/sam_prompt/', {
