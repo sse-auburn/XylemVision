@@ -48,6 +48,7 @@ if [ "$DETACH" = "1" ]; then
   docker run $GPU_FLAG \
     -p 8000:8000 \
     --name xylemvision-app \
+    -v "$(pwd)/weight:/app/weight" \
     -d \
     $IMAGE_NAME
   echo "==> Running at http://localhost:8000"
@@ -56,5 +57,6 @@ else
   docker run $GPU_FLAG \
     -p 8000:8000 \
     --name xylemvision-app \
+    -v "$(pwd)/weight:/app/weight" \
     $IMAGE_NAME
 fi
