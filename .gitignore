@@ -7,6 +7,7 @@ temp_results/
 staticfiles/
 
 # Project-internal files not for public repo
+CLAUDE.md
 TODO.md
 plans_for_updated_waveapp.md
 d2d/
