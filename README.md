@@ -205,4 +205,4 @@ XylemVision/
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+Apache 2.0 License — see [LICENSE](LICENSE).
