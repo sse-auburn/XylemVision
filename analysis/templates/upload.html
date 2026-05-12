@@ -837,7 +837,7 @@ function initCard(data, IDX){
       objectCaching:      false,
       transparentCorners: false,
       cornerColor:        '#cba6f7',
-      cornerSize:         3,
+      cornerSize:         cls === 'Xylem' ? 3 : 6,
       hasBorders:         true,
     });
     const id = ++uidCounter;

@@ -34,7 +34,9 @@ RUN mkdir -p /app/weight/SAM /app/weight/YOLO
 # Download model weights
 RUN pip install gdown && \
     gdown https://drive.google.com/uc?id=16QARfz1cpumYtwBSf23nlBWtr3hweTQy -O /app/weight/SAM/sam_vit_l_0b3195.pth && \
-    gdown https://drive.google.com/uc?id=1maEVUeXS3wCywabZNeO9R-TsBDNanzAS -O /app/weight/YOLO/best.pt
+    gdown --folder 1ms0JqIBf-lwWWKQiei2fMOhHEIkCxuB2 -O /tmp/yolo_dl && \
+    find /tmp/yolo_dl -name "*.pt" | head -1 | xargs -I{} mv {} /app/weight/YOLO/best.pt && \
+    rm -rf /tmp/yolo_dl
 
 # Copy project files
 COPY . /app/
