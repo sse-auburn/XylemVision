@@ -24,6 +24,12 @@ _broadcast_status = {
 }
 _broadcast_lock = threading.Lock()
 
+# Serialise SAM/YOLO calls. With multiple gunicorn threads, two requests can
+# arrive concurrently — but the global sam_predictor is not thread-safe
+# (set_image + predict share state). This lock keeps GPU inference single-
+# threaded while cheap endpoints (/status/, page loads) still run in parallel.
+_sam_lock = threading.Lock()
+
 
 def status_view(request):
     """Return current server-side processing state for multi-user visibility."""
@@ -160,42 +166,172 @@ def sam_prompt_view(request):
     H, W = rgb_np.shape[:2]
     mode = body.get('mode', 'box')
 
+    # Serialise SAM access — the global predictor is not thread-safe.
+    with _sam_lock:
+        return _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode)
+
+
+def _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode):
     sam_predictor.set_image(rgb_np)
+
+    click_pt = None  # (cx, cy) in resized space; only set for point mode
 
     if mode == 'box':
         box = body.get('box')
         if not box or len(box) != 4:
             return HttpResponseBadRequest("box must be [x1,y1,x2,y2]")
-        # Frontend coords are in original image space — scale down to processed space
         box_np = np.array([v * scale for v in box], dtype=float)
-        masks, scores, _ = sam_predictor.predict(
-            box=box_np, multimask_output=True
-        )
+        masks, scores, _ = sam_predictor.predict(box=box_np, multimask_output=True)
+        best_mask = masks[int(scores.squeeze().argmax())]
     elif mode == 'point':
-        pt = body.get('point')
-        if not pt or len(pt) != 2:
-            return HttpResponseBadRequest("point must be [x,y]")
-        coords = np.array([[pt[0] * scale, pt[1] * scale]], dtype=float)
-        labels = np.array([1])
-        masks, scores, _ = sam_predictor.predict(
-            point_coords=coords, point_labels=labels, multimask_output=True
-        )
+        # Accept either a list of labelled points (refinement workflow)
+        # or a single positive point (backward compat).
+        pts_in = body.get('points')
+        coords_list, labels_list = [], []
+        if pts_in and isinstance(pts_in, list):
+            for entry in pts_in:
+                if not entry or len(entry) < 2:
+                    continue
+                x = max(0, min(int(round(entry[0] * scale)), W - 1))
+                y = max(0, min(int(round(entry[1] * scale)), H - 1))
+                lab = int(entry[2]) if len(entry) >= 3 else 1
+                coords_list.append([x, y]); labels_list.append(lab)
+        else:
+            pt = body.get('point')
+            if not pt or len(pt) != 2:
+                return HttpResponseBadRequest("point must be [x,y]")
+            cx = max(0, min(int(round(pt[0] * scale)), W - 1))
+            cy = max(0, min(int(round(pt[1] * scale)), H - 1))
+            coords_list = [[cx, cy]]; labels_list = [1]
+
+        if not coords_list:
+            return HttpResponseBadRequest("no valid points")
+
+        # Use the first positive point for contour-containing-click logic.
+        pos_iter = (i for i, l in enumerate(labels_list) if l == 1)
+        pos_idx = next(pos_iter, 0)
+        cx, cy = coords_list[pos_idx]
+        click_pt = (cx, cy)
+        coords = np.array(coords_list, dtype=float)
+        labels = np.array(labels_list)
+
+        cls = (body.get('class') or '').lower()
+        if 'xylem' in cls:
+            yolo_label = 'Xylem'
+        elif 'bundle' in cls or 'vb' in cls:
+            yolo_label = 'Vascular bundle'
+        elif 'root' in cls:
+            yolo_label = 'Total root'
+        else:
+            yolo_label = None
+
+        yolo_class_boxes = []
+        if yolo_label:
+            yolo_class_boxes = [b for b, l in zip(cached.get('boxes', []), cached.get('labels', []))
+                                if l == yolo_label]
+
+        # For xylems, a bare point prompt often captures a cluster because
+        # adjacent vessels share thin cell walls SAM struggles to resolve.
+        # Pair the point with a tight box prompt sized to the median
+        # detected xylem — this constrains SAM to a single-vessel scale.
+        box_prompt = None
+        if yolo_label == 'Xylem' and yolo_class_boxes:
+            widths = [b[2]-b[0] for b in yolo_class_boxes]
+            heights = [b[3]-b[1] for b in yolo_class_boxes]
+            bw = float(np.median(widths)) * 1.3
+            bh = float(np.median(heights)) * 1.3
+            box_prompt = np.array([
+                max(0.0, cx - bw / 2.0),
+                max(0.0, cy - bh / 2.0),
+                min(float(W), cx + bw / 2.0),
+                min(float(H), cy + bh / 2.0),
+            ], dtype=float)
+
+        if box_prompt is not None:
+            masks, scores, _ = sam_predictor.predict(
+                point_coords=coords, point_labels=labels,
+                box=box_prompt, multimask_output=True
+            )
+        else:
+            masks, scores, _ = sam_predictor.predict(
+                point_coords=coords, point_labels=labels,
+                multimask_output=True
+            )
+
+        img_area = H * W
+        yolo_areas = [(b[2]-b[0]) * (b[3]-b[1]) for b in yolo_class_boxes]
+        if yolo_areas:
+            max_area = max(yolo_areas) * 2.0
+        elif yolo_label == 'Xylem':
+            max_area = img_area * 0.01
+        elif yolo_label == 'Vascular bundle':
+            max_area = img_area * 0.30
+        else:
+            max_area = float(img_area)
+
+        MIN_MASK_PX = 40
+        scores_flat = scores.squeeze()
+
+        in_range = [(i, int(masks[i].sum())) for i in range(len(masks))
+                    if masks[i][cy, cx]
+                    and MIN_MASK_PX <= int(masks[i].sum()) <= max_area]
+        if in_range:
+            best_mask = masks[min(in_range, key=lambda x: x[1])[0]]
+        else:
+            # Relax 3x in case the click happened on an unusually large
+            # vessel; cap at 50% image area to never return the whole root.
+            relaxed = max(max_area * 3, MIN_MASK_PX + 1)
+            relaxed = min(relaxed, img_area * 0.5)
+            fallback = [(i, int(masks[i].sum())) for i in range(len(masks))
+                        if masks[i][cy, cx]
+                        and MIN_MASK_PX <= int(masks[i].sum()) <= relaxed]
+            if fallback:
+                best_mask = masks[min(fallback, key=lambda x: x[1])[0]]
+            else:
+                return JsonResponse({'contour': []})
     else:
         return HttpResponseBadRequest("mode must be 'box' or 'point'")
 
-    scores = scores.squeeze()
-    best_mask = masks[int(scores.argmax())]
+    # Subtract previously-segmented same-class polygons so the new mask
+    # cannot bleed into already-drawn neighbours. Existing polygons arrive
+    # in original-image space; rasterise into the resized SAM space.
+    existing = body.get('existing') or []
+    if existing:
+        exclusion = np.zeros((H, W), dtype=np.uint8)
+        for poly in existing:
+            if not poly or len(poly) < 3:
+                continue
+            pts = np.array(
+                [[int(round(p[0] * scale)), int(round(p[1] * scale))] for p in poly],
+                dtype=np.int32,
+            )
+            cv2.fillPoly(exclusion, [pts], 1)
+        best_mask = best_mask & (exclusion == 0)
 
-    # Extract largest contour from the mask
     cnts, _ = cv2.findContours(
         best_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
     if not cnts:
         return JsonResponse({'contour': []})
 
-    cnt     = max(cnts, key=cv2.contourArea)
-    raw     = cnt.reshape(-1, 2).tolist()
-    # Scale contour back to original image coordinates
+    # For point mode, pick the contour that actually contains the click —
+    # SAM masks can be multi-component, so the largest contour may be a
+    # disconnected blob elsewhere. For box mode, largest is correct.
+    if click_pt is not None:
+        cx_f, cy_f = float(click_pt[0]), float(click_pt[1])
+        cnt = next(
+            (c for c in cnts if cv2.pointPolygonTest(c, (cx_f, cy_f), False) >= 0),
+            max(cnts, key=cv2.contourArea)
+        )
+    else:
+        cnt = max(cnts, key=cv2.contourArea)
+
+    # Adaptive simplification: ~0.1% of perimeter, with a small floor so we
+    # don't collapse small contours below 3 vertices.
+    peri = cv2.arcLength(cnt, True)
+    epsilon = max(0.5, peri * 0.001)
+    cnt = cv2.approxPolyDP(cnt, epsilon=epsilon, closed=True)
+    raw = cnt.reshape(-1, 2).tolist()
     contour = [[round(x / scale), round(y / scale)] for x, y in raw] if scale != 1.0 else raw
     return JsonResponse({'contour': contour})
 
@@ -428,10 +564,9 @@ def export_training_view(request):
     xml_bytes = _build_cvat_xml(filename, cached.get('img_width', 0),
                                 cached.get('img_height', 0), polygons)
 
-    orig_b64 = cached.get('original_image', '')
-    if ',' not in orig_b64:
+    img_bytes = cached.get('orig_bytes')
+    if not img_bytes:
         return HttpResponseBadRequest("Original image not available in cache")
-    img_bytes = base64.b64decode(orig_b64.split(',', 1)[1])
 
     buf = BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -467,10 +602,9 @@ def export_training_batch_view(request):
             stem   = filename.rsplit('.', 1)[0] if '.' in filename else filename
             xml_bytes = _build_cvat_xml(filename, cached.get('img_width', 0),
                                         cached.get('img_height', 0), polygons)
-            orig_b64 = cached.get('original_image', '')
-            if ',' not in orig_b64:
+            img_bytes = cached.get('orig_bytes')
+            if not img_bytes:
                 continue
-            img_bytes = base64.b64decode(orig_b64.split(',', 1)[1])
             zf.writestr(f'images/{filename}', img_bytes)
             zf.writestr(f'labels/{stem}.xml', xml_bytes)
 

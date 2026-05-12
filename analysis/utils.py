@@ -67,12 +67,35 @@ def prompt_points(box, H, W, n_pos=POS_PTS, neg_edge=NEG_EDGE):
     labels = np.array([1] * len(pos) + [0] * len(neg))
     return coords, labels
 
+def _resolve_within_class(masks):
+    """Remove pixels shared by two masks of the same class — biggest wins.
+
+    Adjacent xylems often share cell-wall pixels in their SAM masks. Process
+    in size-descending order so the larger (more confidently detected) mask
+    keeps the contested boundary, and smaller neighbours get whatever is
+    left. Preserves order so callers can still index by detection index.
+    """
+    if len(masks) <= 1:
+        return masks
+    order = sorted(range(len(masks)), key=lambda i: -int(masks[i].sum()))
+    occupied = np.zeros_like(masks[0], dtype=bool)
+    out = [None] * len(masks)
+    for i in order:
+        m = masks[i] & ~occupied
+        out[i] = m
+        occupied |= m
+    return out
+
+
 def refine_masks(x_masks, vb_masks, root_masks):
-    """Subtract overlaps: remove xylem from VB, and both from root."""
+    """Subtract overlaps: within-class first, then xylem→VB→root hierarchy."""
     all_masks = x_masks + vb_masks + root_masks
     if not all_masks:
         return x_masks, vb_masks, root_masks
     shape = all_masks[0].shape
+
+    x_masks  = _resolve_within_class(x_masks)
+    vb_masks = _resolve_within_class(vb_masks)
 
     x_comb = np.zeros(shape, bool)
     for m in x_masks:
