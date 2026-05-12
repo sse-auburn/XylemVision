@@ -3,7 +3,7 @@
 </p>
 
 # XylemVision
-
+ 
 A Django web application for quantifying root anatomy from microscope cross-section images. Upload a root cross-section image and get automated detection and measurement of xylem vessels, vascular bundles, and total root area — with an interactive correction canvas and Excel export.
 
 ![Sample App Screenshot](assets/sample.png)
