@@ -18,11 +18,25 @@ def _nms_cpu(boxes, scores, iou_threshold):
 
 setattr(tv_ops, 'nms', _nms_cpu)
 
-# ── Load models once at startup ──────────────────────────────────────────────
-yolo_model   = YOLO(YOLO_WEIGHTS).to(DEVICE).eval()
-sam          = sam_model_registry[SAM_TYPE](checkpoint=SAM_CKPT).to(DEVICE).eval()
-sam_predictor = SamPredictor(sam)
-print("✅ Models ready on", DEVICE)
+# ── Model handles (loaded lazily on first inference call) ────────────────────
+yolo_model    = None
+_sam          = None
+sam_predictor = None
+
+
+def _ensure_models():
+    global yolo_model, _sam, sam_predictor
+    if yolo_model is not None:
+        return
+    yolo_model    = YOLO(YOLO_WEIGHTS).to(DEVICE).eval()
+    _sam          = sam_model_registry[SAM_TYPE](checkpoint=SAM_CKPT).to(DEVICE).eval()
+    sam_predictor = SamPredictor(_sam)
+    print("✅ Models ready on", DEVICE)
+
+
+def get_sam_predictor():
+    _ensure_models()
+    return sam_predictor
 
 # ── Constants ────────────────────────────────────────────────────────────────
 YOLO_CONF        = 0.55
@@ -192,6 +206,7 @@ def _resize_to_max(bgr, max_side=MAX_IMG_SIDE):
 
 # ── Main pipeline ────────────────────────────────────────────────────────────
 def progressive_yolo_sam(pil_image):
+    _ensure_models()
     rgb_orig = np.array(pil_image)
     bgr_orig = rgb_orig[..., ::-1]
 

@@ -10,7 +10,7 @@ from PIL import Image
 from io import BytesIO
 import base64
 import openpyxl
-from .engine import progressive_yolo_sam, sam_predictor, calculate_metrics
+from .engine import progressive_yolo_sam, get_sam_predictor, calculate_metrics
 from .utils import refine_masks, blend_mask, draw_boxes, class_color_cycle, mask_from_contour, compute_props
 
 _last_analysis_cache = {}
@@ -172,7 +172,8 @@ def sam_prompt_view(request):
 
 
 def _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode):
-    sam_predictor.set_image(rgb_np)
+    predictor = get_sam_predictor()
+    predictor.set_image(rgb_np)
 
     click_pt = None  # (cx, cy) in resized space; only set for point mode
 
@@ -181,7 +182,7 @@ def _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode):
         if not box or len(box) != 4:
             return HttpResponseBadRequest("box must be [x1,y1,x2,y2]")
         box_np = np.array([v * scale for v in box], dtype=float)
-        masks, scores, _ = sam_predictor.predict(box=box_np, multimask_output=True)
+        masks, scores, _ = predictor.predict(box=box_np, multimask_output=True)
         best_mask = masks[int(scores.squeeze().argmax())]
     elif mode == 'point':
         # Accept either a list of labelled points (refinement workflow)
@@ -248,12 +249,12 @@ def _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode):
             ], dtype=float)
 
         if box_prompt is not None:
-            masks, scores, _ = sam_predictor.predict(
+            masks, scores, _ = predictor.predict(
                 point_coords=coords, point_labels=labels,
                 box=box_prompt, multimask_output=True
             )
         else:
-            masks, scores, _ = sam_predictor.predict(
+            masks, scores, _ = predictor.predict(
                 point_coords=coords, point_labels=labels,
                 multimask_output=True
             )
