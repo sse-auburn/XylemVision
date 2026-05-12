@@ -141,12 +141,12 @@ Both single and batch Excel exports produce two sheets:
 Not in the repo. For the GPU Docker build, place them at:
 ```
 weight/SAM/sam_vit_l_0b3195.pth   # Google Drive ID: 16QARfz1cpumYtwBSf23nlBWtr3hweTQy
-weight/YOLO/best.pt                # Google Drive folder: https://drive.google.com/drive/folders/1ms0JqIBf-lwWWKQiei2fMOhHEIkCxuB2
+weight/YOLO/best.pt                # Google Drive ID: 1S1DXaj_itnmWC83ilvVkhhjirZSQEUN6
 ```
 
 ```bash
 gdown "https://drive.google.com/uc?id=16QARfz1cpumYtwBSf23nlBWtr3hweTQy" -O weight/SAM/sam_vit_l_0b3195.pth
-gdown --folder 1ms0JqIBf-lwWWKQiei2fMOhHEIkCxuB2 -O /tmp/yolo_dl && find /tmp/yolo_dl -name "*.pt" | head -1 | xargs -I{} mv {} weight/YOLO/best.pt && rm -rf /tmp/yolo_dl
+gdown "https://drive.google.com/uc?id=1S1DXaj_itnmWC83ilvVkhhjirZSQEUN6" -O weight/YOLO/best.pt
 ```
 
 ## Sample images
