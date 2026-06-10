@@ -1,0 +1,72 @@
+name: Sync to sse-auburn
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout hasiburniloy repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Do not persist the default GITHUB_TOKEN as a github.com auth header;
+          # otherwise it overrides the PAT in the `lab` remote URL and the push
+          # to sse-auburn authenticates as github-actions[bot] -> 403.
+          persist-credentials: false
+
+      - name: Overlay latest content onto sse-auburn and open/refresh PR
+        # NOTE: secret is named SSE_REPO_TOEKN on the repo (typo kept on purpose
+        # so it resolves). Rename the secret + this line together if you fix it.
+        env:
+          GH_TOKEN: ${{ secrets.SSE_REPO_TOEKN }}
+        run: |
+          set -euo pipefail
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+
+          git remote add lab https://x-access-token:${GH_TOKEN}@github.com/sse-auburn/XylemVision.git
+          git fetch lab
+
+          SRC=$(git rev-parse HEAD)
+          BRANCH="sync/from-hasiburniloy"
+
+          # Start from sse-auburn's current state, then lay hasiburniloy's tracked
+          # files on top. This is additive: files that exist only on sse-auburn
+          # (e.g. training images) are preserved, never deleted.
+          git checkout -B "${BRANCH}" lab/main
+          git checkout "${SRC}" -- .
+
+          # Smart "old vs new" gate: if the overlay produced no changes relative
+          # to sse-auburn/main, there is nothing new to sync.
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Content already matches sse-auburn/main. Nothing to sync."
+            exit 0
+          fi
+
+          SUBJ=$(git --no-pager log -1 --pretty=%s "${SRC}")
+          git commit -m "Sync from hasiburniloy: ${SUBJ}"
+
+          # Force-push a single rolling sync branch so there is always exactly
+          # one up-to-date PR to review, instead of a new branch per push.
+          git push -f lab "${BRANCH}:refs/heads/${BRANCH}"
+
+          # Open a PR only if one is not already open for this branch; otherwise
+          # the force-push above has already refreshed the existing PR.
+          OPEN_PR=$(gh pr list --repo sse-auburn/XylemVision \
+            --head "${BRANCH}" --state open --json number -q '.[].number' || true)
+          if [ -z "${OPEN_PR}" ]; then
+            gh pr create \
+              --repo sse-auburn/XylemVision \
+              --head "${BRANCH}" \
+              --base main \
+              --title "Sync from hasiburniloy" \
+              --body "Automated content sync from hasiburniloy/XylemVision (latest: ${SUBJ}).
+
+          Review the diff (sse-auburn \`main\` vs hasiburniloy latest) and merge to accept."
+          else
+            echo "PR #${OPEN_PR} already open for ${BRANCH}; force-push refreshed it."
+          fi

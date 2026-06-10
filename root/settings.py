@@ -12,6 +12,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 ALLOWED_HOSTS = ['*']
 
+CSRF_TRUSTED_ORIGINS = ['https://xylemvision.eng.auburn.edu']
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
