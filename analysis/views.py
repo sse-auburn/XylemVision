@@ -60,8 +60,11 @@ def analyze_stream_view(request):
 
     from django.http import StreamingHttpResponse
     import gc
-    _last_analysis_cache.clear()
-    gc.collect()
+    # "Add more images" sends append=1 so the previous batch's cached entries
+    # stay available for editing (/sam_prompt/, /reanalyze/) and export.
+    if request.POST.get('append') != '1':
+        _last_analysis_cache.clear()
+        gc.collect()
 
     def event_stream():
         total = len(images)
@@ -93,6 +96,7 @@ def analyze_stream_view(request):
 
                 payload = {
                     'type':           'result',
+                    'index':          i,
                     'file':           image_file.name,
                     'original_image': pil_to_base64(original_img),
                     'overlay_image':  pil_to_base64(overlay_img),
@@ -132,7 +136,7 @@ def analyze_stream_view(request):
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
             except Exception as e:
-                yield f"data: {json.dumps({'type':'error','file':image_file.name,'message':str(e)})}\n\n"
+                yield f"data: {json.dumps({'type':'error','index':i,'file':image_file.name,'message':str(e)})}\n\n"
 
           yield f"data: {json.dumps({'type':'done','total':total})}\n\n"
         finally:

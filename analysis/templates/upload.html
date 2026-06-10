@@ -206,6 +206,12 @@
       <p class="text-slate-500 text-sm mt-0.5">Click a card to review and edit annotations.</p>
     </div>
     <div class="flex items-center gap-2">
+      <input type="file" id="addImageUpload" accept="image/*" multiple class="hidden"/>
+      <button id="addMoreBtn" type="button"
+              onclick="document.getElementById('addImageUpload').click()"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        <i class="bi bi-plus-lg"></i> Add more images
+      </button>
       <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
         <input type="checkbox" id="selectAllGallery" class="rounded border-slate-300 text-primary-600 focus:ring-primary-500">
         Select all
@@ -403,6 +409,7 @@ function _postForm(action, nameValuePairs){
 // ═══════════════════════════════════════════════════════════════════════════════
 const App = {
   phase: 'upload',
+  busy: false,
   files: [],
   results: {},
   filenames: [],
@@ -528,9 +535,7 @@ function updateGalleryCard(filename){
   }
 }
 
-function renderGallery(){
-  const grid = document.getElementById('gallery-grid');
-  grid.innerHTML = App.filenames.map(filename => {
+function galleryCardHtml(filename){
     const d = App.results[filename];
     const m = d.metrics || {};
     return `
@@ -570,11 +575,36 @@ function renderGallery(){
         </div>
       </div>
     </div>`;
-  }).join('');
+}
 
-  document.querySelectorAll('.gallery-check').forEach(cb => {
+function bindGalleryChecks(scope){
+  (scope || document).querySelectorAll('.gallery-check').forEach(cb => {
     cb.addEventListener('change', updateBulkBar);
   });
+}
+
+function renderGallery(){
+  const grid = document.getElementById('gallery-grid');
+  grid.innerHTML = App.filenames.map(galleryCardHtml).join('');
+  bindGalleryChecks();
+}
+
+// Append only the new cards (append-only incremental add) so existing cards —
+// and any in-place editor refinements on them — are left untouched.
+function appendGalleryCards(names){
+  if (!names.length) return;
+  const grid = document.getElementById('gallery-grid');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = names.map(galleryCardHtml).join('');
+  Array.from(tmp.children).forEach(card => {
+    grid.appendChild(card);
+    bindGalleryChecks(card);
+  });
+}
+
+function updateAddBtn(){
+  const btn = document.getElementById('addMoreBtn');
+  if (btn) btn.disabled = !!App.busy;
 }
 
 function updateBulkBar(){
@@ -601,21 +631,54 @@ document.getElementById('selectAllGallery').addEventListener('change', function(
 // ═══════════════════════════════════════════════════════════════════════════════
 //  SSE UPLOAD & STREAMING
 // ═══════════════════════════════════════════════════════════════════════════════
-analyzeBtn.addEventListener('click', function(){
-  if (!App.files.length) return;
+// Give a file a name not already used (auto-rename duplicates: "name (2).jpg").
+// File.name is read-only, so a renamed file is wrapped in a fresh File object.
+function uniqueName(name, used){
+  if (!used.has(name)){ used.add(name); return name; }
+  const dot  = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext  = dot > 0 ? name.slice(dot)   : '';
+  let n = 2, cand;
+  do { cand = `${base} (${n})${ext}`; n++; } while (used.has(cand));
+  used.add(cand);
+  return cand;
+}
+function dedupeFiles(files, append){
+  const used = new Set(append ? App.filenames : []);
+  return Array.from(files).map(f => {
+    const nm = uniqueName(f.name, used);
+    return nm === f.name ? f : new File([f], nm, {type: f.type, lastModified: f.lastModified});
+  });
+}
+
+// Run one analysis batch. append=false replaces all prior work (initial upload);
+// append=true keeps existing results and adds the new images (append-only).
+function runBatch(files, append){
+  if (App.busy) return;
+  files = dedupeFiles(files, append);
+  if (!files.length) return;
+
+  App.files = files;
+  App.busy = true;
+  updateAddBtn();
+  const base = append ? App.filenames.length : 0;
+  if (!append){
+    App.filenames = [];
+    App.results = {};
+    window._cardExport = {};
+  }
+
   App.setPhase('processing');
-  App.filenames = [];
-  App.results = {};
-  window._cardExport = {};
   renderProcessingGrid();
-  setProgress(0, App.files.length, '');
+  setProgress(base, base + App.files.length, '');
 
   const fd = new FormData();
   fd.append('csrfmiddlewaretoken', CSRF);
+  fd.append('append', append ? '1' : '0');
   App.files.forEach(f => fd.append('image', f));
 
   const xhr = new XMLHttpRequest();
-  let _xhrProcessed = 0, _xhrBuffer = '', _stageTimer = null;
+  let _xhrProcessed = 0, _xhrBuffer = '', _stageTimer = null, finished = false;
 
   function startStageDisplay(filename){
     const el = document.getElementById('prog-stage');
@@ -627,16 +690,30 @@ analyzeBtn.addEventListener('click', function(){
       el.textContent = STAGES[i][1] + ' ' + STAGES[i][0];
     }, 3000);
   }
-
   function stopStageDisplay(){
     clearInterval(_stageTimer);
     document.getElementById('prog-stage').textContent = '';
   }
 
+  // Both the 'done' SSE event and xhr 'load' can fire; guard so an append
+  // batch never doubles its cards.
+  function finishBatch(){
+    if (finished) return;
+    finished = true;
+    stopStageDisplay();
+    _isLocallyUploading = false;
+    App.busy = false;
+    updateAddBtn();
+    setProgress(App.filenames.length, App.filenames.length, '');
+    App.setPhase('gallery');
+    if (append) appendGalleryCards(App.filenames.slice(base));
+    else        renderGallery();
+  }
+
   xhr.upload.addEventListener('progress', function(e){
     if (!e.lengthComputable) return;
     const pct = Math.round(e.loaded / e.total * 100);
-    setProgress(0, App.files.length, `Uploading ${formatBytes(e.loaded)} / ${formatBytes(e.total)}`);
+    setProgress(base, base + App.files.length, `Uploading ${formatBytes(e.loaded)} / ${formatBytes(e.total)}`);
     document.getElementById('prog-bar').style.width = pct+'%';
     document.getElementById('prog-text').textContent = pct+'%';
   });
@@ -660,30 +737,47 @@ analyzeBtn.addEventListener('click', function(){
       try { ev = JSON.parse(part.slice(6)); } catch(e){ continue; }
       if (ev.type === 'start'){
         updateProcStatus(ev.index, 'Analyzing…', 'bg-amber-400 animate-pulse');
-        setProgress(ev.index, ev.total, ev.file);
+        setProgress(base + ev.index, base + ev.total, ev.file);
         startStageDisplay(ev.file);
       } else if (ev.type === 'result'){
         App.addResult(ev);
-        updateProcStatus(ev.index, 'Done', 'bg-emerald-500');
-        setProgress(App.filenames.length, ev.total, '');
+        updateProcStatus(ev.index, 'Complete', 'bg-emerald-500');
+        setProgress(App.filenames.length, base + ev.total, '');
         stopStageDisplay();
       } else if (ev.type === 'error'){
         updateProcStatus(ev.index, 'Error', 'bg-red-500');
         App.addResult({file:ev.file, error:ev.message, n_xylem:0,n_vb:0,n_root:0,metrics:{},overlay_image:'',original_image:'',contours:{},colour_map:{},img_width:0,img_height:0});
       } else if (ev.type === 'done'){
-        setProgress(App.filenames.length, ev.total, '');
-        App.setPhase('gallery');
-        renderGallery();
+        finishBatch();
       }
     }
   });
 
-  xhr.addEventListener('load', ()=>{ _isLocallyUploading = false; setProgress(App.filenames.length, App.files.length, ''); App.setPhase('gallery'); renderGallery(); });
-  xhr.addEventListener('error', ()=>{ _isLocallyUploading = false; alert('Upload failed. Please try again.'); App.setPhase('upload'); });
+  xhr.addEventListener('load', finishBatch);
+  xhr.addEventListener('error', ()=>{
+    finished = true;
+    _isLocallyUploading = false;
+    App.busy = false;
+    updateAddBtn();
+    alert('Upload failed. Please try again.');
+    App.setPhase(append ? 'gallery' : 'upload');
+  });
 
   _isLocallyUploading = true;
   xhr.open('POST', '/analyze_stream/');
   xhr.send(fd);
+}
+
+analyzeBtn.addEventListener('click', function(){
+  if (!App.files.length) return;
+  runBatch(App.files, false);
+});
+
+// "Add more images" from the gallery — append-only, disabled while a batch runs.
+document.getElementById('addImageUpload').addEventListener('change', function(e){
+  const files = e.target.files;
+  if (files && files.length && !App.busy) runBatch(files, true);
+  e.target.value = '';  // reset so the same file can be re-picked later
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
