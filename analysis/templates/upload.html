@@ -870,9 +870,27 @@ window.Editor = {
     document.body.style.overflow = '';
   },
 
+  // Fabric wraps the <canvas> in a .canvas-container on init and does not
+  // reliably restore it on dispose, so reusing the same element across opens
+  // left the previous image's canvas in the DOM — every card appeared to open
+  // the first image. Replace the element with a fresh one before each init.
+  _resetCanvasEl(){
+    const wrap = document.getElementById('editor-wrap');
+    const old  = document.getElementById('editor-canvas');
+    if (old){
+      const container = old.closest('.canvas-container');
+      (container || old).remove();
+    }
+    const fresh = document.createElement('canvas');
+    fresh.id = 'editor-canvas';
+    wrap.insertBefore(fresh, wrap.firstChild);  // sit under the absolute overlays
+    return fresh;
+  },
+
   _initCanvas(){
     const wrap = document.getElementById('editor-wrap');
-    const canvEl = document.getElementById('editor-canvas');
+    if (this.fc) { try { this.fc.dispose(); } catch(e){} this.fc = null; }
+    const canvEl = this._resetCanvasEl();
     const data = this.data;
     const IMG_W = data.img_width, IMG_H = data.img_height;
     const MAX_W = wrap.clientWidth || 800;
@@ -884,7 +902,6 @@ window.Editor = {
     this.CH = Math.round(IMG_H * this.DISP);
     canvEl.width = this.CW; canvEl.height = this.CH;
 
-    if (this.fc) this.fc.dispose();
     this.fc = new fabric.Canvas('editor-canvas', {width:this.CW, height:this.CH, selection:true});
     const fc = this.fc;
 
