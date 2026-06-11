@@ -281,6 +281,8 @@
           <button class="tool-btn" data-mode="click_pos" id="editor-btn-click-pos" title="Add point (+)"><i class="bi bi-plus-circle-fill" style="color:#a6e3a1"></i></button>
           <button class="tool-btn" data-mode="click_neg" id="editor-btn-click-neg" title="Remove point (−)"><i class="bi bi-dash-circle-fill" style="color:#f38ba8"></i></button>
           <div class="w-px h-4 bg-slate-700 mx-1"></div>
+          <button class="tool-btn" data-mode="scissors" id="editor-btn-scissors" title="Intelligent scissors — magnetic edge tracing (I)"><i class="bi bi-scissors"></i> Scissors</button>
+          <div class="w-px h-4 bg-slate-700 mx-1"></div>
           <button class="tool-btn" id="editor-btn-merge" title="Merge (M)" disabled><i class="bi bi-union"></i> Merge</button>
           <div class="w-px h-4 bg-slate-700 mx-1"></div>
           <button class="tool-btn" id="editor-btn-undo" title="Undo (Ctrl+Z)" disabled><i class="bi bi-arrow-counterclockwise"></i></button>
@@ -525,14 +527,21 @@ function setProgress(done, total, currentFile){
 function updateGalleryCard(filename){
   const d = App.results[filename];
   if (!d) return;
-  const card = Array.from(document.querySelectorAll('[data-file]')).find(el => el.dataset.file === filename);
+  const card = Array.from(document.querySelectorAll('.group[data-file]')).find(el => el.dataset.file === filename);
   if (!card) return;
-  const badges = card.querySelectorAll('.rounded');
-  if (badges.length >= 3) {
-    badges[0].innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>${d.n_xylem||0} Xylem`;
-    badges[1].innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${d.n_vb||0} VB`;
-    badges[2].innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${d.n_root||0} Root`;
-  }
+  // Refresh the thumbnail with the corrected overlay (cache-bust so the browser
+  // doesn't reuse the previous data-URL render).
+  const img = card.querySelector('[data-thumb]');
+  if (img && d.overlay_image) img.src = d.overlay_image;
+  // Update each count on its own badge (don't use a generic '.rounded' selector —
+  // the checkbox also carries that class, which shifted every count).
+  const setBadge = (key, dotClass, val, label) => {
+    const el = card.querySelector(`[data-badge="${key}"]`);
+    if (el) el.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span>${val||0} ${label}`;
+  };
+  setBadge('xylem', 'bg-red-500',     d.n_xylem, 'Xylem');
+  setBadge('vb',    'bg-emerald-500', d.n_vb,    'VB');
+  setBadge('root',  'bg-amber-500',   d.n_root,  'Root');
 }
 
 function galleryCardHtml(filename){
@@ -541,7 +550,7 @@ function galleryCardHtml(filename){
     return `
     <div class="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden" data-file="${escHtml(filename)}">
       <div class="relative aspect-[4/3] bg-slate-100 cursor-pointer" onclick="Editor.open('${escHtml(filename)}')">
-        <img src="${d.overlay_image}" class="w-full h-full object-cover" alt=""/>
+        <img data-thumb src="${d.overlay_image}" class="w-full h-full object-cover" alt=""/>
         <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
         <div class="absolute top-2 left-2" onclick="event.stopPropagation()">
           <input type="checkbox" class="gallery-check rounded border-slate-300 text-primary-600 focus:ring-primary-500" data-file="${escHtml(filename)}" onclick="event.stopPropagation()">
@@ -555,13 +564,13 @@ function galleryCardHtml(filename){
       <div class="p-3">
         <div class="text-xs font-medium text-slate-800 truncate mb-2" title="${escHtml(filename)}">${escHtml(filename)}</div>
         <div class="flex items-center gap-2">
-          <span class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
+          <span data-badge="xylem" class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
             <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>${d.n_xylem||0} Xylem
           </span>
-          <span class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100">
+          <span data-badge="vb" class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${d.n_vb||0} VB
           </span>
-          <span class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">
+          <span data-badge="root" class="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">
             <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${d.n_root||0} Root
           </span>
         </div>
@@ -811,6 +820,7 @@ window.Editor = {
     click: 'Click+SAM — click inside a structure; switch to + or − to refine',
     click_pos: 'Refine + — click an area that should be INCLUDED in the current mask',
     click_neg: 'Refine − — click an area that should be EXCLUDED from the current mask',
+    scissors: 'Scissors — click along an edge; the line snaps to the boundary &nbsp;|&nbsp; dbl-click / Enter = finish &nbsp;|&nbsp; Backspace / Ctrl+Z = undo last point &nbsp;|&nbsp; Esc = cancel all &nbsp;|&nbsp; hold Ctrl = straight &nbsp;|&nbsp; Ctrl+scroll = reach (red box) &nbsp;|&nbsp; Shift+scroll = snap strength',
   },
 
   open(filename){
@@ -828,11 +838,7 @@ window.Editor = {
     document.getElementById('editor-modal').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
     document.getElementById('editor-title').textContent = data.file;
-    document.getElementById('editor-badges').innerHTML = `
-      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>${data.n_xylem||0} Xylem</span>
-      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${data.n_vb||0} VB</span>
-      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${data.n_root||0} Root</span>
-    `;
+    this._renderEditorBadges();
 
     requestAnimationFrame(() => { this._initCanvas(); });
     this._renderMetrics();
@@ -860,7 +866,18 @@ window.Editor = {
     this._dirty = false;
   },
 
+  // Count badges in the modal header — re-rendered after Apply so they don't go stale.
+  _renderEditorBadges(){
+    const d = this.data || {};
+    document.getElementById('editor-badges').innerHTML = `
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>${d.n_xylem||0} Xylem</span>
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${d.n_vb||0} VB</span>
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${d.n_root||0} Root</span>
+    `;
+  },
+
   close(){
+    if (this.sc) this._scissorsExit();
     if (this.fc) { this.fc.dispose(); this.fc = null; }
     if (this.data && this._dirty) {
       updateGalleryCard(this.data.file);
@@ -906,9 +923,11 @@ window.Editor = {
     const fc = this.fc;
 
     const self = this;
+    self._bgImgEl = null;
     fabric.Image.fromURL(data.original_image, function(img){
       img.set({left:0,top:0,scaleX:self.CW/img.width,scaleY:self.CH/img.height,selectable:false,evented:false,hoverCursor:'default'});
       img.data = {isBackground:true};
+      self._bgImgEl = img._element || (img.getElement && img.getElement());  // raw pixels for OpenCV scissors
       fc.add(img); fc.sendToBack(img);
       self._drawInitialContours();
       fc.renderAll();
@@ -1115,7 +1134,9 @@ window.Editor = {
     if (refineModes.includes(prev) && !refineModes.includes(mode)) {
       this.activePoints = []; this.activeAnn = null;
     }
-    ['select','box','click','click_pos','click_neg'].forEach(m => {
+    // Leaving the scissors tool discards any unfinished path and frees OpenCV mats.
+    if (prev === 'scissors' && mode !== 'scissors') this._scissorsExit();
+    ['select','box','click','click_pos','click_neg','scissors'].forEach(m => {
       const btn = document.getElementById('editor-btn-'+m.replace('_','-'));
       if (btn) btn.classList.toggle('active', m===mode);
     });
@@ -1125,9 +1146,15 @@ window.Editor = {
     this.fc.selection = isSel;
     this.fc.getObjects('polygon').forEach(o=>{ o.selectable=isSel; o.evented=isSel; });
     this.fc.getObjects('image').forEach(o=>{ o.selectable=false; o.evented=false; });
-    document.getElementById('editor-wrap').style.cursor = isSel ? 'default' : 'crosshair';
+    // Fabric paints its own cursor on the upper canvas, so set it there (not just
+    // the wrapper). Scissors/box/click use a crosshair like CVAT.
+    const cur = isSel ? 'default' : 'crosshair';
+    this.fc.defaultCursor = cur;
+    this.fc.hoverCursor = isSel ? 'move' : cur;
+    document.getElementById('editor-wrap').style.cursor = cur;
     if (!isSel) this.fc.discardActiveObject();
     this.fc.requestRenderAll();
+    if (mode === 'scissors') this._scissorsEnter();
   },
 
   _clampViewport(){
@@ -1140,10 +1167,11 @@ window.Editor = {
       vpt[4] = Math.min(this.CW * 0.9, Math.max(vpt[4], this.CW * (zoom - 1)));
       vpt[5] = Math.min(this.CH * 0.9, Math.max(vpt[5], this.CH * (zoom - 1)));
     }
+    this._scissorsRescaleDots();
     this.fc.requestRenderAll();
   },
   zoomBy(f){ const z=Math.min(Math.max(this.fc.getZoom()*f,0.15),10); this.fc.zoomToPoint({x:this.CW/2,y:this.CH/2},z); this._clampViewport(); },
-  zoomFit(){ this.fc.setViewportTransform([1,0,0,1,0,0]); this.fc.requestRenderAll(); },
+  zoomFit(){ this.fc.setViewportTransform([1,0,0,1,0,0]); this._scissorsRescaleDots(); this.fc.requestRenderAll(); },
 
   toggleRefined(){
     this.showingRefined = !this.showingRefined;
@@ -1174,6 +1202,14 @@ window.Editor = {
     const fc = this.fc;
 
     fc.on('mouse:wheel', function(opt){
+      // Scissors: Ctrl+scroll resizes the reach square, Shift+scroll tunes snap strength.
+      if (self.currentMode==='scissors' && self.sc && self.sc.ready && (opt.e.ctrlKey || opt.e.shiftKey)){
+        const dir = opt.e.deltaY < 0 ? +1 : -1;
+        if (opt.e.ctrlKey) self._scissorsAdjustSquare(dir);
+        else               self._scissorsAdjustSnap(dir);
+        opt.e.preventDefault(); opt.e.stopPropagation();
+        return;
+      }
       const delta=opt.e.deltaY;
       let z=fc.getZoom()*(0.999**delta);
       z=Math.min(Math.max(z,0.15),10);
@@ -1183,15 +1219,20 @@ window.Editor = {
     });
     fc.on('mouse:down', opt=>{ if(opt.e.altKey){self.isPanning=true;fc.selection=false;self.lastX=opt.e.clientX;self.lastY=opt.e.clientY;} });
     fc.on('mouse:move', opt=>{
-      if(!self.isPanning)return;
-      const vpt=fc.viewportTransform;
-      vpt[4]+=opt.e.clientX-self.lastX; vpt[5]+=opt.e.clientY-self.lastY;
-      self._clampViewport(); self.lastX=opt.e.clientX; self.lastY=opt.e.clientY;
+      if(self.isPanning){
+        const vpt=fc.viewportTransform;
+        vpt[4]+=opt.e.clientX-self.lastX; vpt[5]+=opt.e.clientY-self.lastY;
+        self._clampViewport(); self.lastX=opt.e.clientX; self.lastY=opt.e.clientY;
+        return;
+      }
+      if(self.currentMode==='scissors' && self.sc && self.sc.ready) self._scissorsMove(opt);
     });
     fc.on('mouse:up', opt=>{
       const wasPanning = self.isPanning;
       self.isPanning = false; fc.selection = true;
       if (wasPanning) return;
+
+      if (self.currentMode==='scissors'){ self._scissorsClick(opt); return; }
 
       if (self.currentMode==='box' && self.drawingBox){
         self.drawingBox = false;
@@ -1219,6 +1260,7 @@ window.Editor = {
       }
     });
     fc.on('mouse:dblclick', function(opt){
+      if (self.currentMode==='scissors'){ self._scissorsFinish(); return; }
       const obj = opt.target;
       if (!obj||obj.type!=='polygon'||self.currentMode!=='select') return;
       const lastIdx = obj.points.length-1;
@@ -1307,6 +1349,14 @@ window.Editor = {
     document.addEventListener('keydown', function(e){
       if (!self.data) return;
       if (e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+      // Scissors mode owns Enter / Esc / Backspace / Ctrl+Z while tracing — so an
+      // undo removes the last anchor instead of touching finished annotations.
+      if (self.currentMode==='scissors'){
+        if (e.key==='Enter'){ e.preventDefault(); self._scissorsFinish(); return; }
+        if (e.key==='Escape'){ e.preventDefault(); self._scissorsCancel(); return; }
+        if (e.key==='Backspace'||e.key==='Delete'){ e.preventDefault(); self._scissorsUndo(); return; }
+        if ((e.ctrlKey||e.metaKey) && (e.key==='z'||e.key==='Z')){ e.preventDefault(); self._scissorsUndo(); return; }
+      }
       if (e.key==='Delete'||e.key==='Backspace'){
         const obj = self.fc.getActiveObject();
         if (obj && obj.data && obj.data.annId) self._removeAnnotation(obj.data.annId);
@@ -1314,6 +1364,7 @@ window.Editor = {
       if (e.key==='s'||e.key==='S') self.setMode('select');
       if (e.key==='b'||e.key==='B') self.setMode('box');
       if (e.key==='c'||e.key==='C') self.setMode('click');
+      if (e.key==='i'||e.key==='I') self.setMode('scissors');
       if (e.key==='m'||e.key==='M'){ const mb=document.getElementById('editor-btn-merge'); if(mb&&!mb.disabled) mb.click(); }
       if (e.key==='r'||e.key==='R') self.toggleRefined();
       if (e.key==='+'||e.key==='=') self.zoomBy(1.2);
@@ -1380,6 +1431,346 @@ window.Editor = {
     }).catch(()=>{ spin.classList.add('hidden'); stat.textContent='SAM request failed.'; });
   },
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  INTELLIGENT SCISSORS (magnetic edge tracing, OpenCV.js — CVAT-style)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Lazy-load OpenCV.js (WASM, ~8 MB) only when the tool is first used.
+  _loadOpenCV(cb){
+    if (window.__cvReady){ cb(); return; }
+    window.__cvCbs = window.__cvCbs || [];
+    window.__cvCbs.push(cb);
+    if (window.__cvLoading) return;
+    window.__cvLoading = true;
+    const finish = () => { window.__cvReady = true; (window.__cvCbs||[]).forEach(f=>f()); window.__cvCbs = []; };
+    const poll = () => {
+      if (window.cv){
+        if (cv.Mat && cv.segmentation_IntelligentScissorsMB){ finish(); return; }
+        if (typeof cv.then === 'function'){ cv.then(m => { window.cv = m; }); }
+      }
+      setTimeout(poll, 60);
+    };
+    const s = document.createElement('script');
+    s.src = 'https://docs.opencv.org/4.x/opencv.js';
+    s.async = true;
+    s.onload = poll;
+    s.onerror = () => {
+      window.__cvLoading = false;
+      this._setStatus('Could not load the edge tool (offline?).');
+      alert('Failed to load OpenCV.js for the scissors tool. Check your internet connection, then try again.');
+      this.setMode('select');
+    };
+    document.head.appendChild(s);
+  },
+
+  _setStatus(msg){ const el = document.getElementById('editor-status'); if (el) el.textContent = msg; },
+
+  _scissorsEnter(){
+    const self = this;
+    this._scissorsClearTemp();
+    if (window.__cvReady){ this._scissorsPrepare(); }
+    else { this._setStatus('Loading edge tool…'); this._loadOpenCV(() => {
+      if (self.currentMode === 'scissors') self._scissorsPrepare();
+    }); }
+  },
+
+  // Set up the tool + state. The edge map itself is built per-anchor from a
+  // FULL-RESOLUTION crop (see _scissorsBuildAt) so tracing is pixel-precise even
+  // when the user is zoomed in deep on a pixelated region.
+  _scissorsPrepare(){
+    if (!this._bgImgEl){ this._setStatus('Image not ready yet — try again.'); return; }
+    try {
+      const w0 = this.data.img_width, h0 = this.data.img_height;
+      const tool = new cv.segmentation_IntelligentScissorsMB();
+      // Action threshold (CVAT's red square): caps the image-space distance
+      // between two adjacent points so one segment can't run across the image.
+      const at = Math.max(12, Math.round(Math.min(w0, h0) * 0.06));
+      this.sc = {
+        ready: true, tool, contour: new cv.Mat(),
+        el: this._bgImgEl, w0, h0, cannyHigh: 100,
+        actionThreshold: at, maxThreshold: Math.round(Math.max(w0, h0)), cropMargin: 48,
+        crop: null,
+        committedPts: [], marks: [], dots: [],
+        lastAnchorImg: null, firstAnchorImg: null,
+        previewLine: null, committedLine: null, square: null,
+        rafPending: false, pendingMove: null,
+      };
+      this._setStatus('Scissors ready (full-res) — click along an edge.');
+    } catch(err){
+      console.error('scissors prepare failed', err);
+      this._setStatus('Edge tool failed to initialise.');
+      this.setMode('select');
+    }
+  },
+
+  // Build the edge map from a full-resolution crop centred on the anchor. The
+  // crop only needs to cover the reach square (+ margin), so it stays small and
+  // buildMap stays fast while every pixel is at native resolution.
+  _scissorsBuildAt(ax, ay){
+    const sc = this.sc;
+    const half = sc.actionThreshold + sc.cropMargin;
+    const x0 = Math.max(0, Math.floor(ax - half));
+    const y0 = Math.max(0, Math.floor(ay - half));
+    const x1 = Math.min(sc.w0, Math.ceil(ax + half));
+    const y1 = Math.min(sc.h0, Math.ceil(ay + half));
+    const cw = Math.max(2, x1 - x0), ch = Math.max(2, y1 - y0);
+    const oc = document.createElement('canvas'); oc.width = cw; oc.height = ch;
+    const ctx = oc.getContext('2d');
+    ctx.drawImage(sc.el, x0, y0, cw, ch, 0, 0, cw, ch);
+    const mat = cv.matFromImageData(ctx.getImageData(0, 0, cw, ch));
+    if (sc.crop && sc.crop.mat){ try { sc.crop.mat.delete(); } catch(e){} }
+    sc.tool.setEdgeFeatureCannyParameters(Math.round(sc.cannyHigh * 0.4), sc.cannyHigh);
+    sc.tool.applyImage(mat);
+    sc.tool.buildMap(new cv.Point(Math.round(ax - x0), Math.round(ay - y0)));
+    sc.crop = { x0, y0, w: cw, h: ch, mat };
+  },
+
+  // Snapped path (full-res image space) from the current anchor to a target point.
+  _scissorsPath(tx, ty, straight){
+    const sc = this.sc;
+    if (straight || !sc.lastAnchorImg || !sc.crop){
+      const p = [Math.round(tx), Math.round(ty)];
+      return sc.lastAnchorImg ? [sc.lastAnchorImg, p] : [p];
+    }
+    const cr = sc.crop;
+    const lx = Math.min(cr.w - 1, Math.max(0, Math.round(tx - cr.x0)));
+    const ly = Math.min(cr.h - 1, Math.max(0, Math.round(ty - cr.y0)));
+    sc.tool.getContour(new cv.Point(lx, ly), sc.contour);
+    const n = sc.contour.rows, d = sc.contour.data32S, out = [];
+    for (let i = 0; i < n; i++) out.push([d[2*i] + cr.x0, d[2*i+1] + cr.y0]);
+    return out.length ? out : [sc.lastAnchorImg];
+  },
+
+  _scissorsMove(opt){
+    const sc = this.sc;
+    if (!sc || !sc.ready) return;
+    const p = this.fc.getPointer(opt.e);
+    const imgX = p.x / this.DISP, imgY = p.y / this.DISP;
+    this._scissorsUpdateSquare(imgX, imgY);     // red reach square follows cursor
+    this._scissorsCloseHover(imgX, imgY);       // green-highlight first anchor in close zone
+    if (!sc.lastAnchorImg){ this.fc.requestRenderAll(); return; }
+    // Clamp the live-wire target to within the action threshold of the last anchor.
+    const c = this._scissorsClampReach(imgX, imgY);
+    sc.pendingMove = { x: c[0], y: c[1], straight: opt.e.ctrlKey };
+    if (sc.rafPending) return;
+    sc.rafPending = true;
+    requestAnimationFrame(() => {
+      sc.rafPending = false;
+      const m = sc.pendingMove; if (!m) return;
+      this._scissorsDrawPreview(this._scissorsPath(m.x, m.y, m.straight));
+    });
+  },
+
+  // Chebyshev (square) clamp of a point to within actionThreshold of the last anchor.
+  _scissorsClampReach(imgX, imgY){
+    const sc = this.sc, T = sc.actionThreshold, a = sc.lastAnchorImg;
+    if (!a) return [imgX, imgY];
+    return [Math.max(a[0]-T, Math.min(imgX, a[0]+T)), Math.max(a[1]-T, Math.min(imgY, a[1]+T))];
+  },
+
+  // True only when a click should close the loop: ≥3 anchors placed AND the
+  // cursor is within ~10 SCREEN px of the first anchor. Screen-space keeps the
+  // close target a small consistent dot at any zoom (no eager auto-closing).
+  _scissorsNearFirst(imgX, imgY){
+    const sc = this.sc;
+    if (!sc || !sc.firstAnchorImg || sc.marks.length < 3) return false;
+    const dScreen = Math.hypot((imgX - sc.firstAnchorImg[0])*this.DISP,
+                               (imgY - sc.firstAnchorImg[1])*this.DISP) * this.fc.getZoom();
+    return dScreen < 10;
+  },
+
+  // Highlight the first anchor green while hovering in the close zone, so it's
+  // obvious when the next click will finish the shape.
+  _scissorsCloseHover(imgX, imgY){
+    const sc = this.sc;
+    if (!sc || !sc.dots.length) return;
+    const dot = sc.dots[0], base = this._scDotRadius();
+    if (this._scissorsNearFirst(imgX, imgY)) dot.set({ fill:'#22c55e', radius: base*2 });
+    else                                     dot.set({ fill:'#0ea5e9', radius: base });
+  },
+
+  // The red "reach" square tied to the cursor (image-space size, so it scales with zoom).
+  _scissorsUpdateSquare(imgX, imgY){
+    const sc = this.sc;
+    const side = sc.actionThreshold * 2 * this.DISP;
+    if (!sc.square){
+      sc.square = new fabric.Rect({
+        width: side, height: side, fill:'', stroke:'#f43f5e', strokeWidth:1, strokeUniform:true,
+        strokeDashArray:[4,3], originX:'center', originY:'center', selectable:false, evented:false, objectCaching:false,
+      });
+      this.fc.add(sc.square);
+    }
+    sc.square.set({ left: imgX*this.DISP, top: imgY*this.DISP, width: side, height: side });
+    sc.square.setCoords();
+    this.fc.bringToFront(sc.square);
+  },
+
+  _scissorsDrawPreview(pathImg){
+    const sc = this.sc; if (!sc) return;
+    if (sc.previewLine){ this.fc.remove(sc.previewLine); sc.previewLine = null; }
+    if (pathImg.length >= 2){
+      sc.previewLine = new fabric.Polyline(pathImg.map(p => ({x: p[0]*this.DISP, y: p[1]*this.DISP})), {
+        stroke:'#38bdf8', strokeWidth:0.75, strokeUniform:true, fill:'', selectable:false, evented:false, objectCaching:false,
+      });
+      this.fc.add(sc.previewLine);
+    }
+    this.fc.requestRenderAll();
+  },
+
+  _scissorsAddCommittedLine(){
+    const sc = this.sc;
+    if (sc.committedLine) this.fc.remove(sc.committedLine);
+    sc.committedLine = new fabric.Polyline(sc.committedPts.map(p => ({x: p[0]*this.DISP, y: p[1]*this.DISP})), {
+      stroke:'#0ea5e9', strokeWidth:0.75, strokeUniform:true, fill:'', selectable:false, evented:false, objectCaching:false,
+    });
+    this.fc.add(sc.committedLine);
+  },
+
+  // Anchor dots keep a constant ~2px screen radius regardless of zoom, so they
+  // stay small when zoomed in to fix tiny xylems.
+  _scDotRadius(){ return 2 / Math.max(this.fc.getZoom(), 0.001); },
+  _scissorsRescaleDots(){
+    if (!this.sc || !this.sc.dots || !this.sc.dots.length) return;
+    const r = this._scDotRadius();
+    this.sc.dots.forEach(d => d.set('radius', r));
+  },
+  _scissorsAddDot(imgX, imgY){
+    const dot = new fabric.Circle({
+      left: imgX*this.DISP, top: imgY*this.DISP, radius: this._scDotRadius(), fill:'#0ea5e9', stroke:'#fff', strokeWidth:0.5,
+      originX:'center', originY:'center', selectable:false, evented:false, strokeUniform:true, objectCaching:false,
+    });
+    this.fc.add(dot); this.sc.dots.push(dot);
+  },
+
+  _scissorsClick(opt){
+    const sc = this.sc;
+    if (!sc || !sc.ready){ this._setStatus('Edge tool still loading…'); return; }
+    const p = this.fc.getPointer(opt.e);
+    const rawX = p.x / this.DISP, rawY = p.y / this.DISP;
+
+    if (!sc.lastAnchorImg){
+      const ax = Math.round(rawX), ay = Math.round(rawY);
+      sc.firstAnchorImg = [ax, ay];
+      sc.lastAnchorImg  = [ax, ay];
+      sc.committedPts = [[ax, ay]];
+      sc.marks = [1];
+      this._scissorsBuildAt(ax, ay);
+      this._scissorsAddDot(ax, ay);
+      this._setStatus('Anchor placed — move to trace the edge.');
+      return;
+    }
+    // Close only when clicking the (green-highlighted) first anchor with ≥3 anchors.
+    if (this._scissorsNearFirst(rawX, rawY)){ this._scissorsFinish(); return; }
+
+    // Enforce the action threshold: the new anchor can't exceed the reach square.
+    const c = this._scissorsClampReach(rawX, rawY);
+    const imgX = Math.round(c[0]), imgY = Math.round(c[1]);
+    const seg = this._scissorsPath(imgX, imgY, opt.e.ctrlKey);
+    for (let i = 1; i < seg.length; i++) sc.committedPts.push(seg[i]);
+    sc.marks.push(sc.committedPts.length);
+    sc.lastAnchorImg = [imgX, imgY];
+    this._scissorsBuildAt(imgX, imgY);
+    this._scissorsAddCommittedLine();
+    this._scissorsAddDot(imgX, imgY);
+    this._setStatus(sc.marks.length + ' anchors — dbl-click / Enter to finish.');
+  },
+
+  _scissorsUndo(){
+    const sc = this.sc;
+    if (!sc || !sc.ready || sc.marks.length === 0) return;
+    if (sc.marks.length <= 1){ this._scissorsCancel(); return; }
+    sc.marks.pop();
+    const m = sc.marks[sc.marks.length - 1];
+    sc.committedPts.length = m;
+    sc.lastAnchorImg = sc.committedPts[sc.committedPts.length - 1].slice();
+    this._scissorsBuildAt(sc.lastAnchorImg[0], sc.lastAnchorImg[1]);
+    if (sc.dots.length){ this.fc.remove(sc.dots.pop()); }
+    if (sc.previewLine){ this.fc.remove(sc.previewLine); sc.previewLine = null; }
+    this._scissorsAddCommittedLine();
+    this.fc.requestRenderAll();
+    this._setStatus('Removed last anchor.');
+  },
+
+  // Ctrl+scroll — resize the red reach square (CVAT's action threshold).
+  _scissorsAdjustSquare(dir){
+    const sc = this.sc; if (!sc || !sc.ready) return;
+    const step = Math.max(4, Math.round(sc.actionThreshold * 0.15));
+    sc.actionThreshold = Math.min(sc.maxThreshold, Math.max(8, sc.actionThreshold + dir*step));
+    if (sc.square){
+      const side = sc.actionThreshold * 2 * this.DISP;
+      sc.square.set({ width: side, height: side }); sc.square.setCoords();
+    }
+    // A bigger reach needs a bigger crop, so rebuild the edge map around the anchor.
+    if (sc.lastAnchorImg) this._scissorsBuildAt(sc.lastAnchorImg[0], sc.lastAnchorImg[1]);
+    this.fc.requestRenderAll();
+    this._setStatus('Reach: ' + sc.actionThreshold + ' px');
+  },
+
+  // Shift+scroll — tune edge-snap strength (Canny threshold).
+  _scissorsAdjustSnap(dir){
+    const sc = this.sc; if (!sc || !sc.ready) return;
+    sc.cannyHigh = Math.min(300, Math.max(20, sc.cannyHigh + dir*10));
+    if (sc.lastAnchorImg) this._scissorsBuildAt(sc.lastAnchorImg[0], sc.lastAnchorImg[1]);
+    this._setStatus('Snap strength: ' + sc.cannyHigh + (sc.cannyHigh>=200?' (loose)':sc.cannyHigh<=40?' (tight)':''));
+  },
+
+  _scissorsFinish(){
+    const sc = this.sc;
+    if (!sc || !sc.ready){ this.setMode('select'); return; }
+    // Not enough anchors yet — keep tracing instead of destroying the path
+    // (guards against an accidental double-click finishing too early).
+    if (sc.marks.length < 3){ this._setStatus('Place at least 3 anchors before finishing.'); return; }
+    // Close the loop by snapping from the last anchor back toward the first.
+    if (sc.lastAnchorImg && sc.firstAnchorImg){
+      const c = this._scissorsClampReach(sc.firstAnchorImg[0], sc.firstAnchorImg[1]);
+      const seg = this._scissorsPath(Math.round(c[0]), Math.round(c[1]), false);
+      for (let i = 1; i < seg.length; i++) sc.committedPts.push(seg[i]);
+      sc.committedPts.push(sc.firstAnchorImg.slice());  // close exactly on the first point
+    }
+    const pts = sc.committedPts.slice();
+    this._scissorsClearTemp();
+    if (pts.length >= 3){
+      const cls = document.getElementById('editor-cls').value;
+      const xylIdx = cls==='Xylem' ? this.annotations.filter(a=>a.cls==='Xylem').length + 1 : undefined;
+      this._addAnnotation(pts, cls, xylIdx);
+      this._dirty = true;
+      this._setStatus('Edge polygon added — Apply when ready.');
+    } else {
+      this._setStatus('Need at least 3 points — cancelled.');
+    }
+    this.setMode('select');
+  },
+
+  _scissorsCancel(){
+    this._scissorsClearTemp();  // also resets committedPts / marks / anchors
+    this._setStatus('Scissors path cancelled.');
+  },
+
+  // Remove on-canvas scissors scaffolding (preview/committed lines + anchor dots).
+  _scissorsClearTemp(){
+    const sc = this.sc; if (!sc) return;
+    if (sc.previewLine){ this.fc.remove(sc.previewLine); sc.previewLine = null; }
+    if (sc.committedLine){ this.fc.remove(sc.committedLine); sc.committedLine = null; }
+    if (sc.square){ this.fc.remove(sc.square); sc.square = null; }
+    (sc.dots || []).forEach(d => this.fc.remove(d));
+    sc.dots = [];
+    if (sc.crop && sc.crop.mat){ try { sc.crop.mat.delete(); } catch(e){} }
+    sc.crop = null;
+    sc.committedPts = []; sc.marks = [];
+    sc.lastAnchorImg = null; sc.firstAnchorImg = null;
+    this.fc.requestRenderAll();
+  },
+
+  // Free OpenCV mats/tool when leaving the scissors tool or closing the editor.
+  _scissorsExit(){
+    const sc = this.sc;
+    this._scissorsClearTemp();
+    if (sc){
+      try { sc.contour && sc.contour.delete(); } catch(e){}
+      try { sc.tool && sc.tool.delete(); } catch(e){}
+    }
+    this.sc = null;
+  },
+
   _applyCorrections(){
     const polygons = [];
     this.annotations.forEach(ann => {
@@ -1419,8 +1810,11 @@ window.Editor = {
       this.data.n_xylem = d.n_xylem; this.data.n_vb = d.n_vb; this.data.n_root = d.n_root;
       this.data.metrics = d.metrics; this.data.merged_xylem = d.merged_xylem;
       this.data.contours = d.contours; this.data.colour_map = d.colour_map;
+      this.data.overlay_image = d.overlay_image;   // so the gallery thumbnail refreshes
       this._renderMetrics();
       this._renderXylemTable();
+      this._renderEditorBadges();                  // refresh the in-modal count badges
+      updateGalleryCard(this.data.file);           // reflect new counts + image immediately
     }).catch(()=>{ spin.classList.add('hidden'); btn.disabled=false; stat.textContent='Request failed.'; });
   },
 

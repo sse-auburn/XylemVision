@@ -187,7 +187,37 @@ def _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode):
             return HttpResponseBadRequest("box must be [x1,y1,x2,y2]")
         box_np = np.array([v * scale for v in box], dtype=float)
         masks, scores, _ = predictor.predict(box=box_np, multimask_output=True)
-        best_mask = masks[int(scores.squeeze().argmax())]
+
+        # Constrain the result to the box the user drew (+10% padding). On
+        # low-resolution images SAM's box masks routinely bleed into neighbouring
+        # vessels / background; since the box explicitly delimits the target,
+        # anything well outside it is spurious. Crop every candidate mask to the
+        # box, then keep the SMALLEST substantial one (tightest fit) rather than
+        # blindly trusting argmax(scores), which often returns the loosest mask.
+        bx1, by1 = min(box_np[0], box_np[2]), min(box_np[1], box_np[3])
+        bx2, by2 = max(box_np[0], box_np[2]), max(box_np[1], box_np[3])
+        pad_x, pad_y = 0.10 * (bx2 - bx1), 0.10 * (by2 - by1)
+        ix1 = max(0, int(bx1 - pad_x)); iy1 = max(0, int(by1 - pad_y))
+        ix2 = min(W, int(round(bx2 + pad_x))); iy2 = min(H, int(round(by2 + pad_y)))
+        box_region = np.zeros((H, W), dtype=bool)
+        box_region[iy1:iy2, ix1:ix2] = True
+        box_area = max(1.0, float((iy2 - iy1) * (ix2 - ix1)))
+
+        BOX_MIN_PX = 40
+        cropped = []
+        for i in range(len(masks)):
+            m = masks[i] & box_region
+            a = int(m.sum())
+            if a >= BOX_MIN_PX:
+                cropped.append((a, m))
+        if cropped:
+            # Prefer masks that fill a meaningful part of the box (avoid hairline
+            # slivers) and take the smallest of those (avoid grabbing the whole box).
+            substantial = [(a, m) for a, m in cropped if a >= 0.05 * box_area]
+            pool = substantial if substantial else cropped
+            best_mask = min(pool, key=lambda x: x[0])[1]
+        else:
+            best_mask = masks[int(scores.squeeze().argmax())] & box_region
     elif mode == 'point':
         # Accept either a list of labelled points (refinement workflow)
         # or a single positive point (backward compat).
@@ -250,6 +280,16 @@ def _run_sam_prompt(body, cached, rgb_np, scale, H, W, mode):
                 max(0.0, cy - bh / 2.0),
                 min(float(W), cx + bw / 2.0),
                 min(float(H), cy + bh / 2.0),
+            ], dtype=float)
+
+        # No YOLO xylem reference (common on low-resolution images, where YOLO
+        # detects poorly) — fall back to a modest default box around the click so
+        # a bare point can't snap to an entire cluster of vessels.
+        if box_prompt is None and yolo_label == 'Xylem':
+            d = max(12.0, min(float(W), float(H)) * 0.035)
+            box_prompt = np.array([
+                max(0.0, cx - d), max(0.0, cy - d),
+                min(float(W), cx + d), min(float(H), cy + d),
             ], dtype=float)
 
         if box_prompt is not None:

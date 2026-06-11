@@ -163,6 +163,49 @@ def _choose_mask(box_np, pts=None, pt_labels=None):
     return masks[scores.squeeze().argmax()]
 
 
+def _segment_in_box(box_np, pad=0.12, min_fill=0.05):
+    """Box-prompted SAM for one compact structure (xylem / vascular bundle),
+    hardened against the two failure modes seen on low-resolution images:
+
+    * **bleed** — SAM's mask leaks into neighbouring vessels / background.
+      Every candidate mask is clipped to the YOLO box (+ `pad`), so nothing
+      well outside the detected box survives.
+    * **shrink / wrong scale** — a bare box prompt sometimes locks onto a
+      sub-part. A positive point at the box centre anchors SAM on the boxed
+      object, and selection prefers SAM's highest-confidence mask that still
+      fills a meaningful fraction of the box (not a hairline sliver).
+    """
+    bx1, by1 = float(min(box_np[0], box_np[2])), float(min(box_np[1], box_np[3]))
+    bx2, by2 = float(max(box_np[0], box_np[2])), float(max(box_np[1], box_np[3]))
+    cx, cy = (bx1 + bx2) / 2.0, (by1 + by2) / 2.0
+    masks, scores, _ = sam_predictor.predict(
+        box=box_np,
+        point_coords=np.array([[cx, cy]], dtype=float),
+        point_labels=np.array([1]),
+        multimask_output=True,
+    )
+    sc = scores.squeeze()
+    H, W = masks.shape[1], masks.shape[2]
+    pad_x, pad_y = pad * (bx2 - bx1), pad * (by2 - by1)
+    ix1 = max(0, int(bx1 - pad_x)); iy1 = max(0, int(by1 - pad_y))
+    ix2 = min(W, int(round(bx2 + pad_x))); iy2 = min(H, int(round(by2 + pad_y)))
+    region = np.zeros((H, W), dtype=bool); region[iy1:iy2, ix1:ix2] = True
+    box_area = max(1.0, float((iy2 - iy1) * (ix2 - ix1)))
+
+    cand = []
+    for i in range(len(masks)):
+        m = masks[i] & region                    # clip bleed to the box
+        a = int(m.sum())
+        if a >= 12:
+            cand.append((float(sc[i]), a, m))
+    if not cand:
+        return masks[int(sc.argmax())]
+    substantial = [c for c in cand if c[1] >= min_fill * box_area]
+    if substantial:
+        return max(substantial, key=lambda c: c[0])[2]   # best SAM score, not a sliver
+    return max(cand, key=lambda c: c[1])[2]               # else the largest available
+
+
 def robust_root_mask(img_rgb, masked_rgb, box, H, W):
     box_np = np.array(box, float)
     sam_predictor.set_image(masked_rgb)
@@ -244,14 +287,14 @@ def progressive_yolo_sam(pil_image):
 
     # Stage 2: SAM segmentation (hierarchical masking)
     sam_predictor.set_image(rgb)
-    x_masks = [_choose_mask(np.array(bx, float)) for bx in cls2bx["Xylem"]]
+    x_masks = [_segment_in_box(np.array(bx, float)) for bx in cls2bx["Xylem"]]
 
     no_x = rgb.copy()
     for m in x_masks:
         no_x[m] = 0
 
     sam_predictor.set_image(no_x)
-    vb_masks = [_choose_mask(np.array(bx, float)) for bx in cls2bx["Vascular bundle"]]
+    vb_masks = [_segment_in_box(np.array(bx, float)) for bx in cls2bx["Vascular bundle"]]
 
     no_vb = no_x.copy()
     for m in vb_masks:
