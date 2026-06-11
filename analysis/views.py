@@ -444,6 +444,10 @@ def reanalyze_view(request):
 
     # Update cache
     cached['overlay_image'] = overlay_b64
+    # Keep the raw JPEG bytes in sync so the overlay-ZIP export reflects edits.
+    _ovly_buf = BytesIO()
+    overlay_pil.save(_ovly_buf, format='JPEG', quality=92)
+    cached['overlay_bytes'] = _ovly_buf.getvalue()
     cached['n_xylem']       = len(x_masks)
     cached['n_vb']          = len(vb_masks)
     cached['n_root']        = len(rt_masks)
@@ -635,11 +639,14 @@ def download_overlays_view(request):
             if filename not in _last_analysis_cache:
                 continue
             cached = _last_analysis_cache[filename]
-            # overlay_image is a data URI: "data:image/png;base64,<b64>"
-            b64 = cached['overlay_image'].split(',', 1)[1]
-            img_bytes = base64.b64decode(b64)
+            # The cache stores the overlay as raw JPEG bytes under 'overlay_bytes'
+            # (the SSE *payload* carries a base64 'overlay_image', but that key is
+            # NOT in the cache — reading it here KeyError'd for un-edited images).
+            img_bytes = cached.get('overlay_bytes')
+            if not img_bytes:
+                continue
             stem = filename.rsplit('.', 1)[0]
-            zf.writestr(f"{stem}_overlay.png", img_bytes)
+            zf.writestr(f"{stem}_overlay.jpg", img_bytes)
 
     buf.seek(0)
     response = HttpResponse(buf, content_type='application/zip')
@@ -728,7 +735,10 @@ def download_all_xlsx(request):
             result['metrics'].get('root_max_diameter', 0),
         ])
         for d in result['metrics'].get('xylem_details', []):
-            ws_xy.append([filename, f"x_{d['id'] + 1}", d['area'], d['diameter']])
+            # d['id'] is already 1-based (compute_props enumerates from 1); the
+            # single-image export uses x_{id} too — keep them consistent so IDs
+            # always start at 1.
+            ws_xy.append([filename, f"x_{d['id']}", d['area'], d['diameter']])
 
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
