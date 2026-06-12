@@ -1772,6 +1772,16 @@ window.Editor = {
   },
 
   _applyCorrections(){
+    // Save hidden annotations so they survive the canvas rebuild
+    const savedHidden = this.annotations
+      .filter(ann => !ann.visible)
+      .map(ann => ({
+        cls: ann.cls,
+        color: ann.fabricObj.data.color || null,
+        xylIdx: ann.fabricObj.data.xylIdx,
+        points: this._polyToImagePts(ann.fabricObj),
+      }));
+
     const polygons = [];
     this.annotations.forEach(ann => {
       if (!ann.visible) return;
@@ -1803,6 +1813,14 @@ window.Editor = {
             this._addAnnotation(pts, cls, cls==='Xylem'?inst+1:undefined, color);
           }
         });
+      });
+      // Re-add hidden annotations (invisible, not counted in metrics)
+      savedHidden.forEach(h => {
+        if (h.points.length >= 3){
+          this._addAnnotation(h.points, h.cls, h.xylIdx !== null ? h.xylIdx : undefined, h.color || undefined);
+          const ann = this.annotations[this.annotations.length - 1];
+          ann.visible = false; ann.fabricObj.set('visible', false);
+        }
       });
       this.fc.discardActiveObject(); this.fc.requestRenderAll(); this._updateMergeBtn();
       this._bindXylemTableClicks();

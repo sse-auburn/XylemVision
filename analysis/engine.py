@@ -206,6 +206,57 @@ def _segment_in_box(box_np, pad=0.12, min_fill=0.05):
     return max(cand, key=lambda c: c[1])[2]               # else the largest available
 
 
+def _segment_xylem_per_crop(box_resized, rgb_orig, scale, H_res, W_res, pad=2.0):
+    """SAM on a full-resolution crop centred on one xylem box.
+
+    Gives SAM much more pixel detail per xylem than loading the entire
+    downscaled image.  Returns a boolean mask in the RESIZED (2048px) space
+    so the rest of the pipeline (no_x blackout, overlay, metrics) is unchanged.
+    """
+    if scale != 1.0:
+        bx1_o = box_resized[0] / scale
+        by1_o = box_resized[1] / scale
+        bx2_o = box_resized[2] / scale
+        by2_o = box_resized[3] / scale
+    else:
+        bx1_o, by1_o, bx2_o, by2_o = (float(v) for v in box_resized)
+
+    bw = bx2_o - bx1_o
+    bh = by2_o - by1_o
+    H_orig, W_orig = rgb_orig.shape[:2]
+
+    cx1 = max(0,      int(bx1_o - pad * bw))
+    cy1 = max(0,      int(by1_o - pad * bh))
+    cx2 = min(W_orig, int(round(bx2_o + pad * bw)))
+    cy2 = min(H_orig, int(round(by2_o + pad * bh)))
+
+    crop_rgb = rgb_orig[cy1:cy2, cx1:cx2]
+
+    box_in_crop = np.array([
+        bx1_o - cx1, by1_o - cy1,
+        bx2_o - cx1, by2_o - cy1,
+    ], dtype=float)
+
+    sam_predictor.set_image(crop_rgb)
+    mask_in_crop = _segment_in_box(box_in_crop)  # bool, crop-orig-res space
+
+    # Map mask back to the resized (2048px) space
+    rx1 = int(round(cx1 * scale)); ry1 = int(round(cy1 * scale))
+    rx2 = min(W_res, int(round(cx2 * scale))); ry2 = min(H_res, int(round(cy2 * scale)))
+    tw, th = rx2 - rx1, ry2 - ry1
+    if tw <= 0 or th <= 0:
+        return np.zeros((H_res, W_res), dtype=bool)
+
+    mask_region = cv2.resize(
+        mask_in_crop.astype(np.uint8) * 255, (tw, th),
+        interpolation=cv2.INTER_NEAREST,
+    ) > 127
+
+    full_mask = np.zeros((H_res, W_res), dtype=bool)
+    full_mask[ry1:ry2, rx1:rx2] = mask_region
+    return full_mask
+
+
 def robust_root_mask(img_rgb, masked_rgb, box, H, W):
     box_np = np.array(box, float)
     sam_predictor.set_image(masked_rgb)
@@ -286,8 +337,9 @@ def progressive_yolo_sam(pil_image):
                   for _ in cls2bx[cls_name]]
 
     # Stage 2: SAM segmentation (hierarchical masking)
-    sam_predictor.set_image(rgb)
-    x_masks = [_segment_in_box(np.array(bx, float)) for bx in cls2bx["Xylem"]]
+    # Xylems: per-object full-res crop → better detail for small vessels
+    x_masks = [_segment_xylem_per_crop(np.array(bx, float), rgb_orig, scale, H, W)
+               for bx in cls2bx["Xylem"]]
 
     no_x = rgb.copy()
     for m in x_masks:
