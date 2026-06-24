@@ -686,8 +686,7 @@ function runBatch(files, append){
   fd.append('append', append ? '1' : '0');
   App.files.forEach(f => fd.append('image', f));
 
-  const xhr = new XMLHttpRequest();
-  let _xhrProcessed = 0, _xhrBuffer = '', _stageTimer = null, finished = false;
+  let _stageTimer = null, finished = false;
 
   function startStageDisplay(filename){
     const el = document.getElementById('prog-stage');
@@ -704,8 +703,8 @@ function runBatch(files, append){
     document.getElementById('prog-stage').textContent = '';
   }
 
-  // Both the 'done' SSE event and xhr 'load' can fire; guard so an append
-  // batch never doubles its cards.
+  // The stream 'done' event and the reader finishing can both fire; guard so an
+  // append batch never doubles its cards.
   function finishBatch(){
     if (finished) return;
     finished = true;
@@ -719,62 +718,72 @@ function runBatch(files, append){
     else        renderGallery();
   }
 
-  xhr.upload.addEventListener('progress', function(e){
-    if (!e.lengthComputable) return;
-    const pct = Math.round(e.loaded / e.total * 100);
-    setProgress(base, base + App.files.length, `Uploading ${formatBytes(e.loaded)} / ${formatBytes(e.total)}`);
-    document.getElementById('prog-bar').style.width = pct+'%';
-    document.getElementById('prog-text').textContent = pct+'%';
-  });
-
-  xhr.upload.addEventListener('load', function(){
-    document.getElementById('prog-bar').style.width = '100%';
-    document.getElementById('prog-text').textContent = '100%';
-    document.getElementById('prog-current').textContent = 'Upload complete — starting analysis…';
-    document.getElementById('prog-stage').textContent = '⏳ Preparing…';
-  });
-
-  xhr.addEventListener('progress', function(){
-    const newData = xhr.responseText.slice(_xhrProcessed);
-    _xhrProcessed = xhr.responseText.length;
-    _xhrBuffer += newData;
-    const parts = _xhrBuffer.split('\n\n');
-    _xhrBuffer = parts.pop();
-    for (const part of parts){
-      if (!part.startsWith('data: ')) continue;
-      let ev;
-      try { ev = JSON.parse(part.slice(6)); } catch(e){ continue; }
-      if (ev.type === 'start'){
-        updateProcStatus(ev.index, 'Analyzing…', 'bg-amber-400 animate-pulse');
-        setProgress(base + ev.index, base + ev.total, ev.file);
-        startStageDisplay(ev.file);
-      } else if (ev.type === 'result'){
-        App.addResult(ev);
-        updateProcStatus(ev.index, 'Complete', 'bg-emerald-500');
-        setProgress(App.filenames.length, base + ev.total, '');
-        stopStageDisplay();
-      } else if (ev.type === 'error'){
-        updateProcStatus(ev.index, 'Error', 'bg-red-500');
-        App.addResult({file:ev.file, error:ev.message, n_xylem:0,n_vb:0,n_root:0,metrics:{},overlay_image:'',original_image:'',contours:{},colour_map:{},img_width:0,img_height:0});
-      } else if (ev.type === 'done'){
-        finishBatch();
-      }
-    }
-  });
-
-  xhr.addEventListener('load', finishBatch);
-  xhr.addEventListener('error', ()=>{
+  function failBatch(){
+    if (finished) return;
     finished = true;
+    stopStageDisplay();
     _isLocallyUploading = false;
     App.busy = false;
     updateAddBtn();
     alert('Upload failed. Please try again.');
     App.setPhase(append ? 'gallery' : 'upload');
-  });
+  }
+
+  function handleEvent(ev){
+    if (ev.type === 'start'){
+      updateProcStatus(ev.index, 'Analyzing…', 'bg-amber-400 animate-pulse');
+      setProgress(base + ev.index, base + ev.total, ev.file);
+      startStageDisplay(ev.file);
+    } else if (ev.type === 'result'){
+      App.addResult(ev);
+      updateProcStatus(ev.index, 'Complete', 'bg-emerald-500');
+      setProgress(App.filenames.length, base + ev.total, '');
+      stopStageDisplay();
+    } else if (ev.type === 'error'){
+      updateProcStatus(ev.index, 'Error', 'bg-red-500');
+      App.addResult({file:ev.file, error:ev.message, n_xylem:0,n_vb:0,n_root:0,metrics:{},overlay_image:'',original_image:'',contours:{},colour_map:{},img_width:0,img_height:0});
+    } else if (ev.type === 'done'){
+      finishBatch();
+    }
+  }
+
+  // Stream the response with fetch() + a ReadableStream reader. Each chunk is
+  // decoded, split on the SSE frame delimiter, dispatched, then DISCARDED — only
+  // a tiny trailing-frame buffer is retained. This keeps browser memory flat
+  // regardless of batch size. (The previous XMLHttpRequest approach held the
+  // entire multi-hundred-MB response in xhr.responseText, which blanked the
+  // gallery on large batches.) Trade-off: fetch() can't report byte-level upload
+  // progress, so we show an indeterminate "Uploading…" until the first event.
+  document.getElementById('prog-bar').style.width = '100%';
+  document.getElementById('prog-text').textContent = '';
+  document.getElementById('prog-current').textContent = 'Uploading…';
+  document.getElementById('prog-stage').textContent = '⏳ Preparing…';
 
   _isLocallyUploading = true;
-  xhr.open('POST', '/analyze_stream/');
-  xhr.send(fd);
+  fetch('/analyze_stream/', { method: 'POST', body: fd })
+    .then(function(resp){
+      if (!resp.ok || !resp.body) throw new Error('bad response');
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = '';
+      function pump(){
+        return reader.read().then(function(r){
+          if (r.done){ finishBatch(); return; }
+          buffer += decoder.decode(r.value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop();   // keep only the trailing incomplete frame
+          for (const part of parts){
+            if (!part.startsWith('data: ')) continue;
+            let ev;
+            try { ev = JSON.parse(part.slice(6)); } catch(e){ continue; }
+            handleEvent(ev);
+          }
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .catch(failBatch);
 }
 
 analyzeBtn.addEventListener('click', function(){

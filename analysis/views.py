@@ -44,6 +44,30 @@ def pil_to_base64(img):
     return f"data:image/png;base64,{encoded}"
 
 
+def pil_to_display_base64(img, max_side=2048, quality=85):
+    """Browser-display copy of the original image: capped to `max_side` on the
+    longest edge and JPEG-encoded.
+
+    Streaming the full-resolution original back to the browser as base64 PNG
+    (~69 MB for an 86 MP image) makes the gallery blank/freeze — the data
+    accumulates in the SSE stream and in App.results. The editor only needs
+    enough pixels to draw contours, and its canvas is sized from
+    img_width/img_height (the true original dims) so a smaller image is scaled
+    up and polygon placement stays correct. Exports/SAM still use the full-res
+    bytes kept in the cache under 'orig_bytes'.
+    """
+    w, h = img.size
+    longest = max(w, h)
+    disp = img
+    if longest > max_side:
+        s = max_side / longest
+        disp = img.resize((max(1, int(w * s)), max(1, int(h * s))), Image.LANCZOS)
+    buffer = BytesIO()
+    disp.convert('RGB').save(buffer, format='JPEG', quality=quality)
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    return f"data:image/jpeg;base64,{encoded}"
+
+
 def root_analysis_view(request):
     return render(request, 'upload.html', {})
 
@@ -98,7 +122,7 @@ def analyze_stream_view(request):
                     'type':           'result',
                     'index':          i,
                     'file':           image_file.name,
-                    'original_image': pil_to_base64(original_img),
+                    'original_image': pil_to_display_base64(original_img),
                     'overlay_image':  pil_to_base64(overlay_img),
                     'n_xylem':        result['n_xylem'],
                     'n_vb':           result['n_vb'],
