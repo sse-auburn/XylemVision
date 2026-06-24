@@ -239,6 +239,7 @@ def _segment_xylem_per_crop(box_resized, rgb_orig, scale, H_res, W_res, pad=2.0)
 
     sam_predictor.set_image(crop_rgb)
     mask_in_crop = _segment_in_box(box_in_crop)  # bool, crop-orig-res space
+    torch.cuda.empty_cache()  # release per-crop encoder memory to avoid fragmentation
 
     # Map mask back to the resized (2048px) space
     rx1 = int(round(cx1 * scale)); ry1 = int(round(cy1 * scale))
@@ -337,9 +338,35 @@ def progressive_yolo_sam(pil_image):
                   for _ in cls2bx[cls_name]]
 
     # Stage 2: SAM segmentation (hierarchical masking)
-    # Xylems: per-object full-res crop → better detail for small vessels
-    x_masks = [_segment_xylem_per_crop(np.array(bx, float), rgb_orig, scale, H, W)
-               for bx in cls2bx["Xylem"]]
+    # Xylems: per-object full-res crop → better detail for small vessels.
+    # Hardened against GPU OOM on dense/high-res roots: each crop's encoder pass
+    # needs ~1GB transient and many crops can fragment the 8GB GPU. Any crop that
+    # OOMs falls back to whole-image box SAM so the worker never crashes; order is
+    # preserved (placeholders) so xylem colours/IDs stay stable.
+    torch.cuda.empty_cache()
+    x_masks  = [None] * len(cls2bx["Xylem"])
+    _oom_idx = []
+    for k, bx in enumerate(cls2bx["Xylem"]):
+        try:
+            x_masks[k] = _segment_xylem_per_crop(np.array(bx, float), rgb_orig, scale, H, W)
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            _oom_idx.append(k)
+    if _oom_idx:
+        whole_ok = False
+        try:
+            sam_predictor.set_image(rgb)
+            whole_ok = True
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+        for k in _oom_idx:
+            mask = None
+            if whole_ok:
+                try:
+                    mask = _segment_in_box(np.array(cls2bx["Xylem"][k], float))
+                except Exception:
+                    torch.cuda.empty_cache()
+            x_masks[k] = mask if mask is not None else np.zeros((H, W), dtype=bool)
 
     no_x = rgb.copy()
     for m in x_masks:
