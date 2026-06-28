@@ -206,3 +206,20 @@ XylemVision/
 ## License
 
 Apache 2.0 License — see [LICENSE](LICENSE).
+
+## How to Cite
+
+If you use XylemVision in your research, please cite:
+
+```bibtex
+@article{RAHMAN2026112105,
+title = {XylemVision: A Knowledge-Distilled deep learning framework for High-Throughput quantification of root anatomy in peanut},
+journal = {Computers and Electronics in Agriculture},
+volume = {252},
+pages = {112105},
+year = {2026},
+issn = {0168-1699},
+doi = {https://doi.org/10.1016/j.compag.2026.112105},
+url = {https://www.sciencedirect.com/science/article/pii/S0168169926007003},
+author = {Md. Hasibur Rahman and Sajid Hanif and Mohtasim Hadi Rafi and Alvaro Sanz-Saez and Tanzeel U. Rehman},
+```
